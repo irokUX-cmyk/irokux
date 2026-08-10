@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Asiful Islam — Neural Link"
+description = "A cinematic AI-powered portfolio for Asiful Islam with a living neural interface, profile-grounded chat, microphone input, and spoken assistant responses."
+version = "1.0.0"
+id = "artifacts/neural-link"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19101
+
+[services.development]
+run = "pnpm --filter @workspace/neural-link run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/neural-link", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/neural-link/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19101"
+BASE_PATH = "/"
