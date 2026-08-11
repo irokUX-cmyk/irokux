@@ -21,5 +21,9 @@ services:
         sync: false   # you paste this in the Render dashboard (not committed)
       - key: OPENROUTER_MODEL
         value: google/gemini-2.5-flash
+      - key: OPENROUTER_TTS_MODEL
+        value: fish-audio/s2.1-pro-free:free
+      - key: OPENROUTER_TTS_VOICE
+        value: alloy
       - key: SITE_URL
         value: https://neural-link.onrender.com

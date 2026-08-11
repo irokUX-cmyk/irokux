@@ -114,7 +114,68 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-// Voice playback is handled client-side using the browser's built-in
-// SpeechSynthesis API so the portfolio needs no OpenAI (or other audio) key.
-// OpenRouter is chat-only, so spoken answers do not require a second provider.
+// Voice: server-side TTS via OpenRouter's audio endpoint (Fish Audio).
+// OpenRouter exposes an OpenAI-compatible /api/v1/audio/speech endpoint that
+// returns raw audio bytes. We default to the free Fish Audio model so no extra
+// cost is incurred, and stream the result back to the browser.
+router.post("/tts", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!text) {
+    res.status(400).json({ error: "Please provide text to speak." });
+    return;
+  }
+  if (text.length > 4000) {
+    res.status(400).json({ error: "Text is too long to speak." });
+    return;
+  }
+
+  try {
+    const apiKey = getApiKey();
+    const ttsModel =
+      process.env.OPENROUTER_TTS_MODEL || "fish-audio/s2.1-pro-free:free";
+
+    const upstream = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
+        "X-Title": "Neural Link Portfolio",
+      },
+      body: JSON.stringify({
+        model: ttsModel,
+        input: text,
+        voice: process.env.OPENROUTER_TTS_VOICE || "alloy",
+        response_format: "mp3",
+      }),
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      req.log.error({ status: upstream.status }, "OpenRouter TTS request failed");
+      res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
+      return;
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    // Pipe the upstream audio bytes straight to the client.
+    const reader = upstream.body.getReader();
+    const pump = async (): Promise<void> => {
+      const { done, value } = await reader.read();
+      if (done) {
+        res.end();
+        return;
+      }
+      res.write(Buffer.from(value));
+      await pump();
+    };
+    await pump();
+  } catch (error) {
+    req.log.error({ err: error }, "Neural Link TTS failed");
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
+    }
+  }
+});
+
 export default router;

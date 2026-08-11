@@ -48,6 +48,30 @@ paths:
           description: Invalid message
         "502":
           description: AI provider unavailable
+  /tts:
+    post:
+      operationId: synthesizeSpeech
+      tags: [neural-link]
+      summary: Generate spoken assistant audio
+      description: Synthesizes the given text to speech via OpenRouter (Fish Audio).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TtsInput"
+      responses:
+        "200":
+          description: Audio (MP3) stream
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid text
+        "502":
+          description: TTS provider unavailable
 components:
   schemas:
     HealthStatus:

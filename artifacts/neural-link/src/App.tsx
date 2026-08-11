@@ -104,23 +104,36 @@ function AppShell() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   useEffect(() => { messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }); }, [messages, isSending]);
 
-  const playAnswer = (message: Message) => {
+  const playAnswer = async (message: Message) => {
     setSpeakingId(message.id);
-    if (!('speechSynthesis' in window)) {
-      setSpeakingId(null);
-      setError('Voice playback is unavailable in this browser.');
-      return;
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: message.content }),
+      });
+      if (!response.ok) throw new Error('Audio unavailable');
+      const audio = new Audio(URL.createObjectURL(await response.blob()));
+      audio.onended = () => {
+        setSpeakingId(null);
+        URL.revokeObjectURL(audio.src);
+      };
+      await audio.play();
+    } catch {
+      // Fallback to the browser's built-in speech synthesis if TTS fails.
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(message.content);
+        utterance.rate = 0.92;
+        utterance.pitch = 0.82;
+        utterance.onend = () => setSpeakingId(null);
+        utterance.onerror = () => setSpeakingId(null);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setSpeakingId(null);
+        setError('Voice playback is unavailable right now.');
+      }
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message.content);
-    utterance.rate = 0.92;
-    utterance.pitch = 0.82;
-    utterance.onend = () => setSpeakingId(null);
-    utterance.onerror = () => {
-      setSpeakingId(null);
-      setError('Voice playback is unavailable right now.');
-    };
-    window.speechSynthesis.speak(utterance);
   };
 
   const sendMessage = async (value: string) => {
