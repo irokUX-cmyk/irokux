@@ -38,7 +38,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "..", "..", "neural-link", "dist", "public");
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(publicDir));
-  app.get("*", (_req, res) => {
+  app.get("/{*splat}", (_req, res) => {
     res.sendFile(path.join(publicDir, "index.html"), (err) => {
       if (err) res.status(404).send("Frontend not built. Run the build step first.");
     });
