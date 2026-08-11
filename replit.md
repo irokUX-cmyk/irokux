@@ -1,6 +1,6 @@
-# [Project name]
+# Asiful Islam — Neural Link
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A cinematic AI portfolio that lets visitors explore Asiful Islam’s supplied technical and creative profile through grounded chat, microphone transcription, and spoken answers.
 
 ## Run & Operate
 
@@ -22,23 +22,28 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/neural-link` — the public Neural Link experience and visual interface
+- `artifacts/api-server/src/routes/neural-link.ts` — profile-grounded chat and OpenAI speech routes
+- `lib/api-spec/openapi.yaml` — source of truth for `/api/chat` and `/api/tts`
+- `attached_assets/index_1786369558939.html` — original uploaded visual reference
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Profile questions have a deterministic local answer path so the portfolio remains useful when the external AI provider is unavailable.
+- General questions are sent server-side to OpenAI; the browser never receives the provider secret.
+- Spoken responses use server-generated MP3 audio rather than browser speech synthesis.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Visitors can explore the supplied profile, ask grounded questions, use microphone transcription, and play assistant answers aloud. The assistant refuses to invent unprovided personal facts.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Preserve the uploaded dark neural-interface identity and keep personal claims restricted to supplied information.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Restart both managed workflows after server or frontend changes so the proxied preview receives the update.
 
 ## Pointers
 
