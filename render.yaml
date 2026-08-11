@@ -9,8 +9,10 @@ services:
     # Run the Express API server (which also serves the built frontend in production).
     startCommand: cd artifacts/api-server && node --enable-source-maps ./dist/index.mjs
     plan: free
-    # Render injects PORT automatically.
+    # Render injects PORT automatically. Pin Node 22 (stable on free tier).
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: NODE_ENV
         value: production
       - key: BASE_PATH
