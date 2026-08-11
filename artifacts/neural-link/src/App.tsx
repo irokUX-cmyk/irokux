@@ -102,18 +102,25 @@ function AppShell() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-
   useEffect(() => { messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }); }, [messages, isSending]);
 
-  const playAnswer = async (message: Message) => {
+  const playAnswer = (message: Message) => {
     setSpeakingId(message.id);
-    try {
-      const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: message.content }) });
-      if (!response.ok) throw new Error('Audio unavailable');
-      const audio = new Audio(URL.createObjectURL(await response.blob()));
-      audio.onended = () => { setSpeakingId(null); URL.revokeObjectURL(audio.src); };
-      await audio.play();
-    } catch { setSpeakingId(null); setError('Voice playback is unavailable right now.'); }
+    if (!('speechSynthesis' in window)) {
+      setSpeakingId(null);
+      setError('Voice playback is unavailable in this browser.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    utterance.rate = 0.92;
+    utterance.pitch = 0.82;
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => {
+      setSpeakingId(null);
+      setError('Voice playback is unavailable right now.');
+    };
+    window.speechSynthesis.speak(utterance);
   };
 
   const sendMessage = async (value: string) => {

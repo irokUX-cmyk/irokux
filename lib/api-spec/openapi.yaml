@@ -48,29 +48,6 @@ paths:
           description: Invalid message
         "502":
           description: AI provider unavailable
-  /tts:
-    post:
-      operationId: synthesizeSpeech
-      tags: [neural-link]
-      summary: Generate spoken assistant audio
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TtsInput"
-      responses:
-        "200":
-          description: MP3 audio
-          content:
-            audio/mpeg:
-              schema:
-                type: string
-                format: binary
-        "400":
-          description: Invalid text
-        "502":
-          description: AI provider unavailable
 components:
   schemas:
     HealthStatus:
@@ -114,13 +91,4 @@ components:
       required:
         - answer
         - grounded
-    TtsInput:
-      type: object
-      properties:
-        text:
-          type: string
-          minLength: 1
-          maxLength: 4000
-      required:
-        - text
 

@@ -39,17 +39,6 @@ export const SendChatMessageResponse = zod.object({
 })
 
 
-/**
- * @summary Generate spoken assistant audio
- */
-export const synthesizeSpeechBodyTextMax = 4000;
 
-
-
-export const SynthesizeSpeechBody = zod.object({
-  "text": zod.string().min(1).max(synthesizeSpeechBodyTextMax)
-})
-
-export const SynthesizeSpeechResponse = zod.unknown()
 
 

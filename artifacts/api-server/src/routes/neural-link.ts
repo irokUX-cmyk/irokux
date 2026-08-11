@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import {
   SendChatMessageBody,
   SendChatMessageResponse,
-  SynthesizeSpeechBody,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -30,9 +29,9 @@ Strict personal-information rule:
 5. Never claim to be a human or to imitate any actor's voice. You are a portfolio interface.
 Keep responses conversational and usually under 120 words.`;
 
-function getOpenAiKey(): string {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+function getApiKey(): string {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) throw new Error("OPENROUTER_API_KEY is not configured");
   return key;
 }
 
@@ -69,14 +68,19 @@ router.post("/chat", async (req, res) => {
       return;
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const openRouterModel = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
+    const apiKey = getApiKey();
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${getOpenAiKey()}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
+        "X-Title": "Neural Link Portfolio",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: openRouterModel,
         max_tokens: 320,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
@@ -86,7 +90,7 @@ router.post("/chat", async (req, res) => {
     });
 
     if (!response.ok) {
-      req.log.error({ status: response.status }, "OpenAI chat request failed");
+      req.log.error({ status: response.status }, "OpenRouter chat request failed");
       res.status(502).json({ error: "The neural core is temporarily unavailable." });
       return;
     }
@@ -110,42 +114,7 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-router.post("/tts", async (req, res) => {
-  const parsed = SynthesizeSpeechBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Please provide text to speak." });
-    return;
-  }
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${getOpenAiKey()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "tts-1",
-        voice: "onyx",
-        input: parsed.data.text,
-        response_format: "mp3",
-        speed: 0.92,
-      }),
-    });
-
-    if (!response.ok) {
-      req.log.error({ status: response.status }, "OpenAI speech request failed");
-      res.status(502).json({ error: "Voice output is temporarily unavailable." });
-      return;
-    }
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(Buffer.from(await response.arrayBuffer()));
-  } catch (error) {
-    req.log.error({ err: error }, "Neural Link speech failed");
-    res.status(502).json({ error: "Voice output is temporarily unavailable." });
-  }
-});
-
+// Voice playback is handled client-side using the browser's built-in
+// SpeechSynthesis API so the portfolio needs no OpenAI (or other audio) key.
+// OpenRouter is chat-only, so spoken answers do not require a second provider.
 export default router;

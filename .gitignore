@@ -47,3 +47,15 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Agent memory (project-local, not meant for the public repo)
+.agents/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+

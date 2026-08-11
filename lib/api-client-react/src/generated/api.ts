@@ -22,8 +22,7 @@ import type {
 import type {
   ChatInput,
   ChatResponse,
-  HealthStatus,
-  TtsInput
+  HealthStatus
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -202,74 +201,4 @@ export const useSendChatMessage = <TError = ErrorType<void>,
       return useMutation(getSendChatMessageMutationOptions(options));
     }
 
-export const getSynthesizeSpeechUrl = () => {
-
-
-
-
-  return `/api/tts`
-}
-
-/**
- * @summary Generate spoken assistant audio
- */
-export const synthesizeSpeech = async (ttsInput: TtsInput, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
-
-  return customFetch<Blob>(getSynthesizeSpeechUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(ttsInput)
-  }
-);}
-
-
-
-
-
-export const getSynthesizeSpeechMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof synthesizeSpeech>>, TError,{data: BodyType<TtsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof synthesizeSpeech>>, TError,{data: BodyType<TtsInput>}, TContext> => {
-
-const mutationKey = ['synthesizeSpeech'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof synthesizeSpeech>>, {data: BodyType<TtsInput>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  synthesizeSpeech(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SynthesizeSpeechMutationResult = NonNullable<Awaited<ReturnType<typeof synthesizeSpeech>>>
-    export type SynthesizeSpeechMutationBody = BodyType<TtsInput>
-    export type SynthesizeSpeechMutationError = ErrorType<void>
-
-    /**
- * @summary Generate spoken assistant audio
- */
-export const useSynthesizeSpeech = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof synthesizeSpeech>>, TError,{data: BodyType<TtsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof synthesizeSpeech>>,
-        TError,
-        {data: BodyType<TtsInput>},
-        TContext
-      > => {
-      return useMutation(getSynthesizeSpeechMutationOptions(options));
-    }
 

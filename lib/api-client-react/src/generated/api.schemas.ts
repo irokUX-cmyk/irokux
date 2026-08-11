@@ -39,11 +39,3 @@ export interface ChatResponse {
   grounded: boolean;
 }
 
-export interface TtsInput {
-  /**
-     * @minLength 1
-     * @maxLength 4000
-     */
-  text: string;
-}
-

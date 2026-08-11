@@ -11,4 +11,3 @@ export * from './chatMessage';
 export * from './chatMessageRole';
 export * from './chatResponse';
 export * from './healthStatus';
-export * from './ttsInput';
