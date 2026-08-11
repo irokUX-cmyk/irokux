@@ -6,51 +6,18 @@ import {
 
 const router: IRouter = Router();
 
-const PROFILE = `
-Supplied profile for Asiful Islam:
-- Roles: Network Administrator, Network Engineer, IT professional, Graphic Designer, Video Editor, Photographer, Photo Editor.
-- Technical areas: MikroTik, Cisco networking, network administration, ISP operations, routing, switching, Linux, cybersecurity interest, and infrastructure troubleshooting.
-- Creative areas: graphic design, photo editing, photography, video editing, and motion-oriented creative work.
-- Professional experience supplied: network administration / ISP operations and MikroTik-based customer-network work.
-- Certificates supplied: CCNA and Adobe Visual Design.
-- Education supplied: Computer Science and Engineering (CSE) student.
-`;
+const SYSTEM_PROMPT = `You are Neural Link, a calm, helpful, and precise AI assistant.
 
-const SYSTEM_PROMPT = `You are Neural Link, the calm portfolio assistant for Asiful Islam.
-You are helpful, concise, and precise. The user is exploring a personal portfolio.
+You may freely answer any question using your general knowledge — technical, creative, or casual — just like a normal conversational AI. Be concise and conversational (usually under 150 words).
 
-${PROFILE}
+Optional context: you are the assistant for Asiful Islam's personal portfolio. Asiful is a Network Administrator / Network Engineer and IT professional with creative work in graphic design, photo editing, photography, and video editing; his technical areas include MikroTik, Cisco, routing/switching, Linux, and cybersecurity interest; he is a Computer Science and Engineering (CSE) student with CCNA and Adobe Visual Design certificates. You may mention these details naturally when relevant, but you are not restricted to them and should answer any topic the user raises.
 
-Strict personal-information rule:
-1. For any question about Asiful, his identity, background, work, experience, skills, education, certificates, or personal life, use only the supplied profile above.
-2. Never infer, embellish, or invent personal facts, employers, dates, locations, projects, achievements, contact details, or credentials.
-3. If the supplied profile does not answer a personal question, say clearly that the information was not supplied.
-4. You may answer general non-personal technical or creative questions using your general knowledge, but do not turn general knowledge into a claim about Asiful.
-5. Never claim to be a human or to imitate any actor's voice. You are a portfolio interface.
-Keep responses conversational and usually under 120 words.`;
+Never claim to be a human or imitate any actor's voice. You are an AI interface.`;
 
 function getApiKey(): string {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OPENROUTER_API_KEY is not configured");
   return key;
-}
-
-function isProfileQuestion(messages: Array<{ role: "user" | "assistant"; content: string }>): boolean {
-  const latest = messages[messages.length - 1]?.content ?? "";
-  return /\b(asiful|his|him|about (you|yourself)|your background|your experience|your skills|your work|your education|your certificate|your career|personal)\b/i.test(latest);
-}
-
-function profileAnswer(question: string): string | null {
-  const q = question.toLowerCase();
-  if (!isProfileQuestion([{ role: "user", content: question }])) return null;
-  if (/\bname\b/.test(q)) return "His name is Asiful Islam.";
-  if (/\b(certificates?|credentials?|ccna|adobe)\b/.test(q)) return "The supplied profile lists CCNA and Adobe Visual Design.";
-  if (/\b(education|study|degree|student|cse)\b/.test(q)) return "Asiful is a Computer Science and Engineering (CSE) student.";
-  if (/\b(creative|design|video|photo|visual)\b/.test(q)) return "His supplied creative work includes graphic design, photo editing, photography, video editing, and motion-oriented creative work.";
-  if (/\b(cyber|security|linux)\b/.test(q)) return "Cybersecurity, Linux, and security tooling are part of Asiful’s supplied technical interests.";
-  if (/\b(role|job|work|experience|career|professional)\b/.test(q)) return "The supplied profile describes network administration and ISP operations, including MikroTik-based customer-network work, alongside graphic design and video editing.";
-  if (/\b(skill|technical|network|mikrotik|cisco|routing|switching)\b/.test(q)) return "The supplied technical areas include network administration, ISP operations, MikroTik, Cisco networking, routing, switching, Linux, cybersecurity interest, and infrastructure troubleshooting.";
-  return "I can answer personal questions only from information Asiful supplied. I don’t have enough supplied information to answer that specific question.";
 }
 
 router.post("/chat", async (req, res) => {
@@ -61,13 +28,6 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
-    const latestQuestion = parsed.data.messages[parsed.data.messages.length - 1]?.content ?? "";
-    const localAnswer = profileAnswer(latestQuestion);
-    if (localAnswer) {
-      res.json(SendChatMessageResponse.parse({ answer: localAnswer, grounded: true }));
-      return;
-    }
-
     const openRouterModel = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
     const apiKey = getApiKey();
 
@@ -106,7 +66,7 @@ router.post("/chat", async (req, res) => {
 
     res.json(SendChatMessageResponse.parse({
       answer,
-      grounded: isProfileQuestion(parsed.data.messages),
+      grounded: false,
     }));
   } catch (error) {
     req.log.error({ err: error }, "Neural Link chat failed");
