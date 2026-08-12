@@ -44,20 +44,27 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
     const core = new THREE.Group();
     scene.add(core);
 
-    // === white-hot center ring (the bright aperture from the reference) — kept small/tight ===
+    // === small ROUND bright center (a true sphere, not a flat ring) ===
     const center = new THREE.Mesh(
-      new THREE.TorusGeometry(0.34, 0.07, 24, 160),
-      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.SphereGeometry(0.22, 32, 32),
+      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.98, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     core.add(center);
-    // inner glow fill
-    const fill = new THREE.Mesh(
-      new THREE.CircleGeometry(0.36, 48),
-      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }),
+    // soft halo around it
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.34, 32, 32),
+      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
-    core.add(fill);
+    core.add(halo);
 
-    // === gold rings around the center ===
+    // === inner counter-rotating lattice (creative depth) ===
+    const lattice = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.5, 1),
+      new THREE.MeshBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.18, wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    core.add(lattice);
+
+    // === depth layer 1: near gold rings ===
     const ringMat = new THREE.MeshBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
     const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.02, 14, 180), ringMat);
     core.add(ringA);
@@ -65,11 +72,11 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
     ringB.rotation.x = Math.PI / 2.3;
     core.add(ringB);
 
-    // === radiating gold filament spokes (starburst) ===
+    // === depth layer 2: mid filament spokes (starburst) ===
     const FIL = 120;
     const filPos = new Float32Array(FIL * 2 * 3);
     for (let i = 0; i < FIL; i++) {
-      const r0 = 0.55 + Math.random() * 0.2;
+      const r0 = 0.28 + Math.random() * 0.15;
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(2 * Math.random() - 1);
       const dir = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.sin(ph) * Math.sin(th), Math.cos(ph));
@@ -83,7 +90,7 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
     const filaments = new THREE.LineSegments(filGeo, filMat);
     core.add(filaments);
 
-    // === fragmented gold arc rings (outer) ===
+    // === depth layer 3: far fragmented arcs + cage ===
     const arcs: THREE.Mesh[] = [];
     for (let i = 0; i < 3; i++) {
       const a = new THREE.Mesh(
@@ -91,14 +98,14 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
         new THREE.MeshBasicMaterial({ color: goldSoft.clone(), transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       a.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      a.position.z = -0.4 - i * 0.3; // pushed back for depth
       arcs.push(a); core.add(a);
     }
-
-    // === faint wireframe cage ===
     const cage = new THREE.Mesh(
       new THREE.IcosahedronGeometry(1.5, 1),
       new THREE.MeshBasicMaterial({ color: goldSoft.clone(), transparent: true, opacity: 0.1, wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
+    cage.position.z = -0.6;
     core.add(cage);
 
     // === gold dust ===
@@ -178,17 +185,23 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
       const baseSpin = m === "generating" ? 0.55 : m === "speaking" ? 0.35 : 0.12;
       core.rotation.y += (baseSpin + energy * 0.9) * dt;
       core.rotation.x += (0.07 + energy * 0.35) * dt;
+      lattice.rotation.y -= (0.22 + energy * 0.4) * dt;   // counter-rotating inner lattice
+      lattice.rotation.x += (0.12 + energy * 0.2) * dt;
       filaments.rotation.y -= (0.05 + energy * 0.18) * dt;
       arcs.forEach((a, i) => { a.rotation.z += (0.04 + i * 0.02) * dt; });
       dust.rotation.y -= (0.025 + energy * 0.12) * dt;
 
-      const tiltX = (pointerRef.current.y * 0.4 + gyroRef.current.y * 0.6) * 0.55;
-      const tiltY = (pointerRef.current.x * 0.4 + gyroRef.current.x * 0.6) * 0.55;
-      core.rotation.x += (tiltX - core.rotation.x) * 0.05;
-      scene.rotation.y += (tiltY - scene.rotation.y) * 0.05;
+      // parallax: camera shifts with pointer/gyro → real depth between layers
+      const px = (pointerRef.current.x * 0.5 + gyroRef.current.x * 0.5);
+      const py = (pointerRef.current.y * 0.5 + gyroRef.current.y * 0.5);
+      camera.position.x += (px * 0.9 - camera.position.x) * 0.04;
+      camera.position.y += (-py * 0.6 - camera.position.y) * 0.04;
+      camera.lookAt(0, 0, 0);
 
       // subtle breathing of the whole core
-      core.scale.setScalar(1 + Math.sin(t * 1.1) * 0.02 + energy * 0.07);
+      const breathe = 1 + Math.sin(t * 1.1) * 0.02 + energy * 0.07;
+      core.scale.setScalar(breathe);
+      center.scale.setScalar(1 + Math.sin(t * 3.0) * 0.06); // the small core pulses
 
       // color: gold; faint cyan only while generating
       const genMix = m === "generating" ? Math.min(1, 0.4 + energy) : 0;
@@ -196,14 +209,16 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
       (ringA.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
       (ringB.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
       (filMat).color.lerp(tmp, 0.04);
+      (lattice.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
       (center.material as THREE.MeshBasicMaterial).color.lerp(hot.clone().lerp(accent, genMix * 0.35), 0.05);
 
       // intensities
-      (center.material as THREE.MeshBasicMaterial).opacity = 1;
-      (fill.material as THREE.MeshBasicMaterial).opacity = 0.45 + energy * 0.1;
+      (center.material as THREE.MeshBasicMaterial).opacity = 0.98;
+      (halo.material as THREE.MeshBasicMaterial).opacity = 0.18 + energy * 0.12;
+      (lattice.material as THREE.MeshBasicMaterial).opacity = 0.16 + energy * 0.12;
       (ringA.material as THREE.MeshBasicMaterial).opacity = 0.6 + energy * 0.2;
       (filMat).opacity = 0.18 + energy * 0.2 + (m === "generating" ? 0.08 : 0);
-      bloom.strength = 0.65 + energy * 0.35 + (m === "generating" ? 0.18 : 0);
+      bloom.strength = 0.6 + energy * 0.35 + (m === "generating" ? 0.18 : 0);
 
       const dp = dGeo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < DUST; i++) {
