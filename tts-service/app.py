@@ -1,35 +1,45 @@
 """
-Self-hosted TTS service using Kokoro ONNX (free, open-source).
-Serves a deep male "Jarvis-like" voice (bm_george) by default.
-Endpoint: POST /tts  { "text": "...", "voice": "bm_george" }
-Returns: audio/wav (24kHz mono).
+Self-hosted TTS proxy using Edge TTS (Microsoft, free, no API key).
+Default voice: en-US-GuyNeural (deep male, Jarvis-like).
+Endpoint: POST /tts  { "text": "...", "voice": "en-US-GuyNeural" }
+Returns: audio/mpeg (MP3). Falls back to Google Translate TTS if Edge fails.
+No model files, no GPU — just a fast cloud call, so cold starts are quick.
 """
 import io
 import os
+import urllib.parse
+import urllib.request
 from typing import Optional
 
-import soundfile as sf
+import edge_tts
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
-from kokoro_onnx import Kokoro
 
-MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.int8.onnx")
-VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices-v1.0.bin")
-DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")  # deep male British
+APP = FastAPI(title="Neural Link TTS", version="2.0.0")
 
-app = FastAPI(title="Neural Link TTS", version="1.0.0")
-
-# Lazy-load the model (large file) on first request.
-_KOKORO = None
+DEFAULT_VOICE = os.environ.get("TTS_VOICE", "en-US-GuyNeural")  # deep male
 
 
-def get_kokoro() -> Kokoro:
-    global _KOKORO
-    if _KOKORO is None:
-        if not os.path.exists(MODEL_PATH) or not os.path.exists(VOICES_PATH):
-            raise RuntimeError("Kokoro model files not found")
-        _KOKORO = Kokoro(model_path=MODEL_PATH, voices_path=VOICES_PATH)
-    return _KOKORO
+async def synth_edge(text: str, voice: str) -> bytes:
+    comm = edge_tts.Communicate(text, voice)
+    buf = bytearray()
+    async for chunk in comm.stream():
+        if chunk["type"] == "audio":
+            buf += chunk["data"]
+    if not buf:
+        raise RuntimeError("Edge TTS returned empty audio")
+    return bytes(buf)
+
+
+def synth_google(text: str) -> bytes:
+    url = (
+        "https://translate.google.com/translate_tts?ie=UTF-8&q="
+        + urllib.parse.quote(text)
+        + "&tl=en&client=tw-ob"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
 
 
 @app.get("/healthz")
@@ -38,7 +48,7 @@ def healthz():
 
 
 @app.post("/tts")
-def tts(payload: dict):
+async def tts(payload: dict):
     text = (payload or {}).get("text")
     if not text or not isinstance(text, str):
         raise HTTPException(status_code=400, detail="Provide 'text' as a string.")
@@ -48,26 +58,19 @@ def tts(payload: dict):
     voice = (payload or {}).get("voice") or DEFAULT_VOICE
 
     try:
-        kokoro = get_kokoro()
-        audio, sr = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
+        audio = await synth_edge(text, voice)
+        return Response(content=audio, media_type="audio/mpeg")
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {exc}")
-
-    # Write WAV via a temp file (robust across model dtypes) and read bytes back.
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        sf.write(tmp_path, audio, sr, subtype="PCM_16")
-        with open(tmp_path, "rb") as f:
-            wav_bytes = f.read()
-    finally:
-        os.remove(tmp_path)
-    return Response(content=wav_bytes, media_type="audio/wav")
+        # Fallback to Google Translate TTS (fast, free, no key).
+        try:
+            audio = synth_google(text)
+            return Response(content=audio, media_type="audio/mpeg")
+        except Exception:
+            raise HTTPException(status_code=502, detail=f"TTS failed: {exc}")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(APP, host="0.0.0.0", port=port)

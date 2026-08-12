@@ -12,8 +12,36 @@ function getNousKey(): string {
   return key;
 }
 
-// Chat via Nous Research Inference API (OpenAI-compatible). Uses a small, fast
-// free model by default for low latency; override with NOUS_MODEL env var.
+// Fast free Nous models, tried in parallel (Promise.any = first winner).
+// Smaller models return first; the quickest reply wins for low latency.
+const FAST_NOUS_MODELS = [
+  "poolside/laguna-xs-2.1:free",
+  "tencent/hy3:free",
+  "poolside/laguna-s-2.1:free",
+  "upstage/solar-pro4:free",
+];
+
+async function tryNous(model: string, apiKey: string, body: object, signal: AbortSignal): Promise<string> {
+  const resp = await fetch("https://api.nousresearch.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (NeuralLink/2.0)",
+    },
+    body: JSON.stringify({ model, ...body }),
+    signal,
+  });
+  if (!resp.ok) throw new Error(`Nous ${model} -> ${resp.status}`);
+  const data = (await resp.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const answer = data.choices?.[0]?.message?.content?.trim();
+  if (!answer) throw new Error(`Nous ${model} empty`);
+  return answer;
+}
+
+// Chat via Nous Research Inference API (OpenAI-compatible, free tier).
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -24,60 +52,28 @@ router.post("/chat", async (req, res) => {
   try {
     const apiKey = getNousKey();
     const userMessages = parsed.data.messages;
-    // Only free (no-payment) Nous models are allowed. If the env value isn't a
-    // known free model, fall back to the fast default.
-    const FREE_NOUS_MODELS = [
-      "tencent/hy3:free",
-      "poolside/laguna-xs-2.1:free",
-      "poolside/laguna-s-2.1:free",
-      "stepfun/step-3.7-flash:free",
-      "upstage/solar-pro4:free",
-    ];
-    const envModel = process.env.NOUS_MODEL?.trim();
-    const model = envModel && FREE_NOUS_MODELS.includes(envModel) ? envModel : "tencent/hy3:free";
 
     const systemPrompt =
       "You are Neural Link, a calm, helpful AI assistant for Asiful Islam's personal portfolio. " +
       "Asiful is a Network Engineer / CSE student (MikroTik, Cisco, Linux, cybersecurity, also graphic/photo/video editing). " +
       "Answer any topic concisely (usually under 150 words). You are an AI interface, not a human.";
 
+    const payload = {
+      max_tokens: 320,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...userMessages,
+      ],
+    };
+
+    // Race the fast models; first successful reply wins (lowest latency).
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      const resp = await fetch("https://inference-api.nousresearch.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (NeuralLink/1.0)",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 320,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...userMessages,
-          ],
-        }),
-        signal: controller.signal,
-      });
+      const answer = await Promise.any(
+        FAST_NOUS_MODELS.map((m) => tryNous(m, apiKey, payload, controller.signal)),
+      );
       clearTimeout(timer);
-
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => "");
-        req.log.error({ status: resp.status, err: errText.slice(0, 200) }, "Nous chat request failed");
-        res.status(502).json({ error: "The neural core is temporarily unavailable." });
-        return;
-      }
-
-      const data = (await resp.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const answer = data.choices?.[0]?.message?.content?.trim();
-      if (!answer) {
-        res.status(502).json({ error: "The neural core is temporarily unavailable." });
-        return;
-      }
       res.json(SendChatMessageResponse.parse({ answer, grounded: false }));
       return;
     } catch {
