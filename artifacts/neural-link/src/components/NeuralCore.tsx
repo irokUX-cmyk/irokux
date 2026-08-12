@@ -7,9 +7,13 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 type Mode = "idle" | "listening" | "generating" | "speaking";
 
 /**
- * NeuralCore — restrained, cinematic holographic core (not "shiny").
- * Design intent: dark negative space, a small precise hot center, thin
- * filaments and rings that are dim until they react. Bloom is subtle.
+ * NeuralCore — recreated to match the reference image:
+ *  - white-hot center ring (the bright aperture)
+ *  - radiating gold filament spokes (starburst)
+ *  - fragmented gold arc rings + faint wireframe cage
+ *  - gold dust on near-black field
+ *  - controlled bloom (high threshold → only the hot center blooms)
+ * Reactive: drag-rotate, gyro tilt, generate = surge, speak = pulse.
  */
 export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.MutableRefObject<number> }) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -23,114 +27,113 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
   useEffect(() => {
     const mount = mountRef.current!;
     const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.04);
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    camera.position.z = 5.4;
+    camera.position.z = 5.0;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
     mount.appendChild(renderer.domElement);
 
-    // restrained palette
-    const gold = new THREE.Color("#e8a23c");
-    const goldDeep = new THREE.Color("#7a5418");
-    const hot = new THREE.Color("#fff1cf");
+    const gold = new THREE.Color("#ffb43c");
+    const goldSoft = new THREE.Color("#c8861f");
+    const hot = new THREE.Color("#fff6e0");
     const accent = new THREE.Color("#5fe0ff");
 
     const core = new THREE.Group();
     scene.add(core);
 
-    // small precise hot center (the actual "light source") — kept small + tight
+    // === white-hot center ring (the bright aperture from the reference) ===
     const center = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 32, 32),
-      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.TorusGeometry(0.6, 0.12, 24, 160),
+      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     core.add(center);
-
-    // very faint volumetric shell — NOT a glowing blob
-    const shell = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.15, 3),
-      new THREE.MeshBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.045, blending: THREE.AdditiveBlending, depthWrite: false }),
+    // inner glow fill
+    const fill = new THREE.Mesh(
+      new THREE.CircleGeometry(0.62, 48),
+      new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
-    core.add(shell);
+    core.add(fill);
 
-    // thin equatorial rings (precise, dim)
-    const ringMat = new THREE.MeshBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.012, 12, 160), ringMat);
-    core.add(ring);
-    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.008, 10, 160), ringMat.clone());
-    ring2.rotation.x = Math.PI / 2.4;
-    core.add(ring2);
+    // === gold rings around the center ===
+    const ringMat = new THREE.MeshBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.02, 14, 180), ringMat);
+    core.add(ringA);
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.014, 12, 180), ringMat.clone());
+    ringB.rotation.x = Math.PI / 2.3;
+    core.add(ringB);
 
-    // faint cage — barely there
-    const cage = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.42, 1),
-      new THREE.MeshBasicMaterial({ color: goldDeep.clone(), transparent: true, opacity: 0.09, wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false }),
-    );
-    core.add(cage);
-
-    // thin filaments — dim, precise, few
-    const FIL = 60;
+    // === radiating gold filament spokes (starburst) ===
+    const FIL = 120;
     const filPos = new Float32Array(FIL * 2 * 3);
     for (let i = 0; i < FIL; i++) {
-      const r0 = 0.5 + Math.random() * 0.25;
+      const r0 = 0.55 + Math.random() * 0.2;
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(2 * Math.random() - 1);
       const dir = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.sin(ph) * Math.sin(th), Math.cos(ph));
-      const len = 1.3 + Math.random() * 2.2;
+      const len = 1.0 + Math.random() * 2.6;
       filPos[i * 6 + 0] = dir.x * r0; filPos[i * 6 + 1] = dir.y * r0; filPos[i * 6 + 2] = dir.z * r0;
       filPos[i * 6 + 3] = dir.x * len; filPos[i * 6 + 4] = dir.y * len; filPos[i * 6 + 5] = dir.z * len;
     }
     const filGeo = new THREE.BufferGeometry();
     filGeo.setAttribute("position", new THREE.BufferAttribute(filPos, 3));
-    const filMat = new THREE.LineBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
+    const filMat = new THREE.LineBasicMaterial({ color: gold.clone(), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
     const filaments = new THREE.LineSegments(filGeo, filMat);
     core.add(filaments);
 
-    // concentric broken arcs — thin, dim
+    // === fragmented gold arc rings (outer) ===
     const arcs: THREE.Mesh[] = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 3; i++) {
       const a = new THREE.Mesh(
-        new THREE.TorusGeometry(1.8 + i * 0.45, 0.006, 6, 160, Math.PI * (1.1 + i * 0.35)),
-        new THREE.MeshBasicMaterial({ color: goldDeep.clone(), transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }),
+        new THREE.TorusGeometry(1.7 + i * 0.5, 0.008, 6, 200, Math.PI * (0.9 + i * 0.4)),
+        new THREE.MeshBasicMaterial({ color: goldSoft.clone(), transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       a.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
       arcs.push(a); core.add(a);
     }
 
-    // sparse dust — few, small, dim
+    // === faint wireframe cage ===
+    const cage = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.5, 1),
+      new THREE.MeshBasicMaterial({ color: goldSoft.clone(), transparent: true, opacity: 0.1, wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    core.add(cage);
+
+    // === gold dust ===
     const sprite = (() => {
       const c = document.createElement("canvas"); c.width = c.height = 64;
       const g = c.getContext("2d")!;
       const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-      grd.addColorStop(0, "rgba(255,240,210,0.9)");
-      grd.addColorStop(0.4, "rgba(230,162,60,0.4)");
-      grd.addColorStop(1, "rgba(230,162,60,0)");
+      grd.addColorStop(0, "rgba(255,250,235,0.9)");
+      grd.addColorStop(0.4, "rgba(255,180,60,0.4)");
+      grd.addColorStop(1, "rgba(255,180,60,0)");
       g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
       return new THREE.CanvasTexture(c);
     })();
-    const DUST = 500;
+    const DUST = 700;
     const dPos = new Float32Array(DUST * 3);
     const dSpd = new Float32Array(DUST);
     for (let i = 0; i < DUST; i++) {
-      const r = 2.5 + Math.random() * 4;
+      const r = 2.2 + Math.random() * 4.5;
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(2 * Math.random() - 1);
       dPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
       dPos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
       dPos[i * 3 + 2] = r * Math.cos(ph);
-      dSpd[i] = 0.08 + Math.random() * 0.4;
+      dSpd[i] = 0.08 + Math.random() * 0.45;
     }
     const dGeo = new THREE.BufferGeometry();
     dGeo.setAttribute("position", new THREE.BufferAttribute(dPos, 3));
-    const dMat = new THREE.PointsMaterial({ size: 0.05, map: sprite, color: gold.clone(), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
+    const dMat = new THREE.PointsMaterial({ size: 0.06, map: sprite, color: gold.clone(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
     const dust = new THREE.Points(dGeo, dMat);
     scene.add(dust);
 
-    // subtle bloom (low strength, high threshold so only the hot core blooms)
+    // === controlled bloom: high threshold so ONLY the hot center blooms ===
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.7, 0.55);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.65, 0.5);
     composer.addPass(bloom);
 
     // interaction
@@ -143,7 +146,7 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
       const r = mount.getBoundingClientRect();
       pointerRef.current.x = ((e.clientX - r.left) / r.width) * 2 - 1;
       pointerRef.current.y = ((e.clientY - r.top) / r.height) * 2 - 1;
-      if (pointerRef.current.down) { rotRef.current.vy = pointerRef.current.x * 0.008; rotRef.current.vx = pointerRef.current.y * 0.008; }
+      if (pointerRef.current.down) { rotRef.current.vy = pointerRef.current.x * 0.01; rotRef.current.vx = pointerRef.current.y * 0.01; }
     };
     const onDown = () => { pointerRef.current.down = true; };
     const onUp = () => { pointerRef.current.down = false; rotRef.current.vx *= 0.6; rotRef.current.vy *= 0.6; };
@@ -172,41 +175,41 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
       const m = modeRef.current;
       const energy = energyRef.current;
 
-      const baseSpin = m === "generating" ? 0.5 : m === "speaking" ? 0.32 : 0.1;
-      core.rotation.y += (baseSpin + energy * 0.8) * dt;
-      core.rotation.x += (0.06 + energy * 0.3) * dt;
-      filaments.rotation.y -= (0.04 + energy * 0.15) * dt;
-      arcs.forEach((a, i) => { a.rotation.z += (0.03 + i * 0.015) * dt; });
-      dust.rotation.y -= (0.02 + energy * 0.1) * dt;
+      const baseSpin = m === "generating" ? 0.55 : m === "speaking" ? 0.35 : 0.12;
+      core.rotation.y += (baseSpin + energy * 0.9) * dt;
+      core.rotation.x += (0.07 + energy * 0.35) * dt;
+      filaments.rotation.y -= (0.05 + energy * 0.18) * dt;
+      arcs.forEach((a, i) => { a.rotation.z += (0.04 + i * 0.02) * dt; });
+      dust.rotation.y -= (0.025 + energy * 0.12) * dt;
 
-      const tiltX = (pointerRef.current.y * 0.35 + gyroRef.current.y * 0.65) * 0.5;
-      const tiltY = (pointerRef.current.x * 0.35 + gyroRef.current.x * 0.65) * 0.5;
+      const tiltX = (pointerRef.current.y * 0.4 + gyroRef.current.y * 0.6) * 0.55;
+      const tiltY = (pointerRef.current.x * 0.4 + gyroRef.current.x * 0.6) * 0.55;
       core.rotation.x += (tiltX - core.rotation.x) * 0.05;
       scene.rotation.y += (tiltY - scene.rotation.y) * 0.05;
 
-      // gentle breathing — small
-      core.scale.setScalar(1 + Math.sin(t * 1.0) * 0.018 + energy * 0.06);
+      // subtle breathing of the whole core
+      core.scale.setScalar(1 + Math.sin(t * 1.1) * 0.02 + energy * 0.07);
 
-      // color: gold, with a faint cyan only while generating
+      // color: gold; faint cyan only while generating
       const genMix = m === "generating" ? Math.min(1, 0.4 + energy) : 0;
       tmp.copy(gold).lerp(accent, genMix * 0.5);
-      (shell.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
-      (ring.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
-      (ring2.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
+      (ringA.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
+      (ringB.material as THREE.MeshBasicMaterial).color.lerp(tmp, 0.05);
       (filMat).color.lerp(tmp, 0.04);
-      (center.material as THREE.MeshBasicMaterial).color.lerp(hot.clone().lerp(accent, genMix * 0.4), 0.06);
+      (center.material as THREE.MeshBasicMaterial).color.lerp(hot.clone().lerp(accent, genMix * 0.35), 0.05);
 
-      // keep things dim by default; only push a little on generate/speak
-      (center.material as THREE.MeshBasicMaterial).opacity = 0.9 + energy * 0.08;
-      (ring.material as THREE.MeshBasicMaterial).opacity = 0.32 + energy * 0.2;
-      (filMat).opacity = 0.1 + energy * 0.18 + (m === "generating" ? 0.06 : 0);
-      bloom.strength = 0.45 + energy * 0.3 + (m === "generating" ? 0.15 : 0);
+      // intensities
+      (center.material as THREE.MeshBasicMaterial).opacity = 1;
+      (fill.material as THREE.MeshBasicMaterial).opacity = 0.45 + energy * 0.1;
+      (ringA.material as THREE.MeshBasicMaterial).opacity = 0.6 + energy * 0.2;
+      (filMat).opacity = 0.18 + energy * 0.2 + (m === "generating" ? 0.08 : 0);
+      bloom.strength = 0.85 + energy * 0.4 + (m === "generating" ? 0.2 : 0);
 
       const dp = dGeo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < DUST; i++) {
         let z = dp.array[i * 3 + 2] as number;
         z -= dSpd[i] * dt * (0.35 + energy);
-        if (z < -5.5) z = 5.5;
+        if (z < -6) z = 6;
         dp.array[i * 3 + 2] = z;
       }
       dp.needsUpdate = true;

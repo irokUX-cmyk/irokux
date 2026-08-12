@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body {
-  background: radial-gradient(1200px 800px at 50% 40%, #060e1c 0%, #03060f 60%, #01030a 100%);
+  background: radial-gradient(1200px 800px at 50% 42%, #060608 0%, #030304 55%, #000000 100%);
   color: var(--ink);
   overflow: hidden;
 }
