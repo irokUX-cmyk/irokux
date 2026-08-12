@@ -1,43 +1,34 @@
 """
-Self-hosted TTS service using Piper (free, open-source, tiny footprint).
-Serves a deep male "Jarvis-like" voice (en_US-libritts_r-medium) by default.
-Endpoint: POST /tts  { "text": "...", "voice": "en_US-libritts_r-medium" }
-Returns: audio/wav (22.05kHz mono).
+Self-hosted TTS service using Kokoro ONNX (free, open-source).
+Default voice: bm_george (deep male, Jarvis-like).
+Endpoint: POST /tts  { "text": "...", "voice": "bm_george" }
+Returns: audio/wav (24kHz mono).
 """
 import io
 import os
-import wave
+import urllib.request
 from typing import Optional
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 
-# Piper is imported lazily so healthz works before the (small) model load.
 APP = FastAPI(title="Neural Link TTS", version="1.0.0")
 
-# Piper needs the onnx model + json config. We download them at startup if absent.
-VOICE_DIR = os.environ.get("PIPER_VOICE_DIR", "/app/piper_voice")
-DEFAULT_VOICE = os.environ.get("TTS_VOICE", "en_US-libritts_r-medium")
-_Synthesizer = None
+MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v0_19.int8.onnx")
+VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices.bin")
+DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")
+_Kokoro = None
 
 
-def get_synthesizer(voice: str):
-    global _Synthesizer
-    if _Synthesizer is None:
-        from piper import PiperVoice
-        model_path = os.path.join(VOICE_DIR, f"{voice}.onnx")
-        config_path = os.path.join(VOICE_DIR, f"{voice}.onnx.json")
-        if not os.path.exists(model_path) or not os.path.exists(config_path):
-            # Download the voice files on first use (cached afterwards).
-            base = (
-                "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
-                f"en/en_US/libritts_r/medium/{voice}"
-            )
-            urllib.request.urlretrieve(f"{base}.onnx", model_path)
-            urllib.request.urlretrieve(f"{base}.onnx.json", config_path)
-        _Synthesizer = PiperVoice.load(model_path, config_path=config_path)
-    return _Synthesizer
+def get_kokoro():
+    global _Kokoro
+    if _Kokoro is None:
+        from kokoro_onnx import Kokoro
+        if not os.path.exists(MODEL_PATH) or not os.path.exists(VOICES_PATH):
+            raise RuntimeError("Kokoro model/voices files not found")
+        _Kokoro = Kokoro(MODEL_PATH, VOICES_PATH)
+    return _Kokoro
 
 
 @app.get("/healthz")
@@ -56,10 +47,10 @@ def tts(payload: dict):
     voice = (payload or {}).get("voice") or DEFAULT_VOICE
 
     try:
-        synth = get_synthesizer(voice)
+        kokoro = get_kokoro()
+        audio, sr = kokoro.create(text, voice)
         buf = io.BytesIO()
-        with wave.open(buf, "wb") as wav_file:
-            synth.synthesize_wav(text, wav_file)
+        sf.write(buf, audio, sr, format="WAV")
         return Response(content=buf.getvalue(), media_type="audio/wav")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {exc}")
