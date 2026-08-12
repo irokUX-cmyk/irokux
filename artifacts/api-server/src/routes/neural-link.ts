@@ -28,7 +28,7 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
-    const openRouterModel = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
+    const openRouterModel = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-nano-30b-a3b:free";
     const apiKey = getApiKey();
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
