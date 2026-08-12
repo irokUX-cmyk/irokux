@@ -44,15 +44,15 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
     const core = new THREE.Group();
     scene.add(core);
 
-    // === white-hot center ring (the bright aperture from the reference) ===
+    // === white-hot center ring (the bright aperture from the reference) — kept small/tight ===
     const center = new THREE.Mesh(
-      new THREE.TorusGeometry(0.6, 0.12, 24, 160),
+      new THREE.TorusGeometry(0.34, 0.07, 24, 160),
       new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     core.add(center);
     // inner glow fill
     const fill = new THREE.Mesh(
-      new THREE.CircleGeometry(0.62, 48),
+      new THREE.CircleGeometry(0.36, 48),
       new THREE.MeshBasicMaterial({ color: hot.clone(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     core.add(fill);
@@ -133,7 +133,7 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
     // === controlled bloom: high threshold so ONLY the hot center blooms ===
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.65, 0.5);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.65, 0.55);
     composer.addPass(bloom);
 
     // interaction
@@ -203,7 +203,7 @@ export function NeuralCore({ mode, energyRef }: { mode: Mode; energyRef: React.M
       (fill.material as THREE.MeshBasicMaterial).opacity = 0.45 + energy * 0.1;
       (ringA.material as THREE.MeshBasicMaterial).opacity = 0.6 + energy * 0.2;
       (filMat).opacity = 0.18 + energy * 0.2 + (m === "generating" ? 0.08 : 0);
-      bloom.strength = 0.85 + energy * 0.4 + (m === "generating" ? 0.2 : 0);
+      bloom.strength = 0.65 + energy * 0.35 + (m === "generating" ? 0.18 : 0);
 
       const dp = dGeo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < DUST; i++) {
