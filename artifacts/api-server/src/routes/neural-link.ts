@@ -6,20 +6,7 @@ import {
 
 const router: IRouter = Router();
 
-const SYSTEM_PROMPT = `You are Neural Link, a calm, helpful, and precise AI assistant.
-
-You may freely answer any question using your general knowledge — technical, creative, or casual — just like a normal conversational AI. Be concise and conversational (usually under 150 words).
-
-Optional context: you are the assistant for Asiful Islam's personal portfolio. Asiful is a Network Administrator / Network Engineer and IT professional with creative work in graphic design, photo editing, photography, and video editing; his technical areas include MikroTik, Cisco, routing/switching, Linux, and cybersecurity interest; he is a Computer Science and Engineering (CSE) student with CCNA and Adobe Visual Design certificates. You may mention these details naturally when relevant, but you are not restricted to them and should answer any topic the user raises.
-
-Never claim to be a human or imitate any actor's voice. You are an AI interface.`;
-
-function getApiKey(): string {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error("OPENROUTER_API_KEY is not configured");
-  return key;
-}
-
+// Free, no-key chat via Pollinations (no daily quota, no credits).
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -28,67 +15,38 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
-    const apiKey = getApiKey();
     const userMessages = parsed.data.messages;
 
-    // Race all models in parallel and return the FIRST valid answer.
-    const fallbackModels = [
-      "nvidia/nemotron-3-nano-30b-a3b:free",
-      "nvidia/nemotron-3-super-120b-a12b:free",
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "poolside/laguna-s-2.1:free",
-      "poolside/laguna-xs-2.1:free",
-    ];
-    const primary = process.env.OPENROUTER_MODEL?.trim();
-    const candidates = primary ? [primary, ...fallbackModels] : fallbackModels;
+    // Free, no-key chat via Pollinations (no daily quota, no credits).
+    const lastUser = userMessages[userMessages.length - 1]?.content || "";
+    const systemNote = "You are Neural Link, a calm, helpful AI assistant. " +
+      "Answer any topic concisely (under 150 words). " +
+      "You are the assistant for Asiful Islam's portfolio (Network Engineer, CSE student, " +
+      "MikroTik/Cisco/Linux/cybersecurity, also graphic/photo/video editing).";
+    const fullPrompt = `${systemNote}\n\nUser: ${lastUser}\n\nNeural Link:`;
 
-    const requestTimeoutMs = 15_000;
-    async function callModel(model: string): Promise<string | null> {
-      try {
-        const resp = await Promise.race([
-          fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
-              "X-Title": "Neural Link Portfolio",
-            },
-            body: JSON.stringify({
-              model,
-              max_tokens: 320,
-              messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                ...userMessages,
-              ],
-            }),
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("timeout")), requestTimeoutMs)
-          ),
-        ]);
-
-        if (!resp.ok) return null;
-        const data = (await resp.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        return data.choices?.[0]?.message?.content?.trim() || null;
-      } catch {
-        return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const resp = await fetch("https://text.pollinations.ai/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "Neural-Link/1.0" },
+        body: JSON.stringify({ messages: [{ role: "user", content: fullPrompt }], model: "openai" }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!resp.ok) {
+        res.status(502).json({ error: "The neural core is temporarily unavailable." });
+        return;
       }
-    }
-
-    const answer = await Promise.any(candidates.map(callModel));
-
-    if (!answer) {
+      const answer = (await resp.text()).trim();
+      res.json(SendChatMessageResponse.parse({ answer, grounded: false }));
+      return;
+    } catch {
+      clearTimeout(timer);
       res.status(502).json({ error: "The neural core is temporarily unavailable." });
       return;
     }
-
-    res.json(SendChatMessageResponse.parse({
-      answer,
-      grounded: false,
-    }));
   } catch (error) {
     req.log.error({ err: error }, "Neural Link chat failed");
     res.status(502).json({ error: "The neural core is temporarily unavailable." });
@@ -126,62 +84,50 @@ router.post("/tts", async (req, res) => {
   }
 
   try {
-    const apiKey = getApiKey();
-    const ttsModel =
-      process.env.OPENROUTER_TTS_MODEL || "fish-audio/s2.1-pro-free:free";
-    // Fish Audio selects voices by `reference_id` (a voice UUID), not by a name.
-    // Default to a MALE voice (Jarvis): https://fish.audio/m/14129c3e320149449d6bada6862f7338/
-    // Override with any male Fish voice UUID via OPENROUTER_TTS_VOICE.
-    const voiceRef =
-      process.env.OPENROUTER_TTS_VOICE || "14129c3e320149449d6bada6862f7338";
-
-    // Fish Audio expresses emotion by embedding bracket tags in the text
-    // (e.g. [happy], [excited], [sad], [calm]) — there is no separate "tags"
-    // parameter. Pick a tone from the message so the voice sounds emotional
-    // and realistic instead of flat.
+    // Free, no-key TTS via HuggingFace Inference API (no payment, no credit).
+    // Fish Audio emotion bracket tags are harmless to keep (ignored by HF).
     const tone = pickEmotion(text);
     const spoken = tone ? `[${tone}] ${text}` : text;
 
-    const body: Record<string, unknown> = {
-      model: ttsModel,
-      input: spoken,
-      response_format: "mp3",
-    };
-    if (/^[a-f0-9]{32}$/i.test(voiceRef)) {
-      body.reference_id = voiceRef;
-    }
+    const hfModel = process.env.HF_TTS_MODEL || "espnet/kan-bayashi_ljspeech_vits";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const upstream = await fetch(`https://api-inference.huggingface.co/models/${hfModel}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: spoken }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
 
-    const upstream = await fetch("https://openrouter.ai/api/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
-        "X-Title": "Neural Link Portfolio",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!upstream.ok || !upstream.body) {
-      req.log.error({ status: upstream.status }, "OpenRouter TTS request failed");
-      res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
-      return;
-    }
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    // Pipe the upstream audio bytes straight to the client.
-    const reader = upstream.body.getReader();
-    const pump = async (): Promise<void> => {
-      const { done, value } = await reader.read();
-      if (done) {
-        res.end();
+      if (!upstream.ok || !upstream.body) {
+        req.log.error({ status: upstream.status }, "HuggingFace TTS request failed");
+        res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
         return;
       }
-      res.write(Buffer.from(value));
+
+      const contentType = upstream.headers.get("content-type") || "audio/wav";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "no-store");
+      const reader = upstream.body.getReader();
+      const pump = async (): Promise<void> => {
+        const { done, value } = await reader.read();
+        if (done) {
+          res.end();
+          return;
+        }
+        res.write(Buffer.from(value));
+        await pump();
+      };
       await pump();
-    };
-    await pump();
+    } catch (upErr) {
+      clearTimeout(timer);
+      req.log.error({ err: upErr }, "HuggingFace TTS upstream failed");
+      if (!res.headersSent) {
+        res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
+      }
+    }
   } catch (error) {
     req.log.error({ err: error }, "Neural Link TTS failed");
     if (!res.headersSent) {
