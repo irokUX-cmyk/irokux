@@ -20,6 +20,12 @@ function getApiKey(): string {
   return key;
 }
 
+function getFishApiKey(): string {
+  const key = process.env.FISH_AUDIO_API_KEY;
+  if (!key) throw new Error("FISH_AUDIO_API_KEY is not configured");
+  return key;
+}
+
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -126,51 +132,40 @@ router.post("/tts", async (req, res) => {
   }
 
   try {
-    const apiKey = getApiKey();
+    const fishApiKey = getFishApiKey();
     const ttsModel =
       process.env.OPENROUTER_TTS_MODEL || "fish-audio/s2.1-pro-free:free";
-    // Fish Audio selects voices by `reference_id` (a voice UUID), not by a name.
-    // Default to a MALE voice (Jarvis): https://fish.audio/m/14129c3e320149449d6bada6862f7338/
-    // Override with any male Fish voice UUID via OPENROUTER_TTS_VOICE.
     const voiceRef =
       process.env.OPENROUTER_TTS_VOICE || "14129c3e320149449d6bada6862f7338";
 
-    // Fish Audio expresses emotion by embedding bracket tags in the text
-    // (e.g. [happy], [excited], [sad], [calm]) — there is no separate "tags"
-    // parameter. Pick a tone from the message so the voice sounds emotional
-    // and realistic instead of flat.
     const tone = pickEmotion(text);
     const spoken = tone ? `[${tone}] ${text}` : text;
 
     const body: Record<string, unknown> = {
-      model: ttsModel,
-      input: spoken,
+      text: spoken,
+      reference_id: voiceRef,
       response_format: "mp3",
     };
-    if (/^[a-f0-9]{32}$/i.test(voiceRef)) {
-      body.reference_id = voiceRef;
-    }
 
-    const upstream = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+    const upstream = await fetch("https://api.fish.audio/v1/tts", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${fishApiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
-        "X-Title": "Neural Link Portfolio",
       },
       body: JSON.stringify(body),
     });
 
     if (!upstream.ok || !upstream.body) {
-      req.log.error({ status: upstream.status }, "OpenRouter TTS request failed");
+      const errText = await upstream.text().catch(() => "");
+      req.log.error({ status: upstream.status, err: errText.slice(0, 200) }, "Fish Audio TTS request failed");
       res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
       return;
     }
 
-    res.setHeader("Content-Type", "audio/mpeg");
+    const contentType = upstream.headers.get("content-type") || "audio/mpeg";
+    res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "no-store");
-    // Pipe the upstream audio bytes straight to the client.
     const reader = upstream.body.getReader();
     const pump = async (): Promise<void> => {
       const { done, value } = await reader.read();
