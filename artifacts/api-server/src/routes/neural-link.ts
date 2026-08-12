@@ -24,7 +24,11 @@ router.post("/chat", async (req, res) => {
   try {
     const apiKey = getNousKey();
     const userMessages = parsed.data.messages;
-    const model = process.env.NOUS_MODEL?.trim() || "hermes-3-llama-3.1-8b";
+    // Only the free Nous Portal models are allowed (no payment). If the env
+    // value isn't one of them, fall back to the fast default.
+    const FREE_NOUS_MODELS = ["Hermes-4.3-36B", "Hermes-4-70B", "Hermes-4-405B"];
+    const envModel = process.env.NOUS_MODEL?.trim();
+    const model = envModel && FREE_NOUS_MODELS.includes(envModel) ? envModel : "Hermes-4.3-36B";
 
     const systemPrompt =
       "You are Neural Link, a calm, helpful AI assistant for Asiful Islam's personal portfolio. " +
@@ -115,7 +119,8 @@ async function ttsHuggingFace(text: string, signal: AbortSignal): Promise<{ ok: 
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ inputs: description, prompt: text }),
+    // HF Parler format: inputs = the spoken text, parameters.description = voice.
+    body: JSON.stringify({ inputs: text, parameters: { description } }),
     signal,
   });
   if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
