@@ -6,7 +6,14 @@ import {
 
 const router: IRouter = Router();
 
-// Free, no-key chat via Pollinations (no daily quota, no credits).
+function getNousKey(): string {
+  const key = process.env.NOUS_API_KEY;
+  if (!key) throw new Error("NOUS_API_KEY is not configured");
+  return key;
+}
+
+// Chat via Nous Research Inference API (OpenAI-compatible). Uses a small, fast
+// free model by default for low latency; override with NOUS_MODEL env var.
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -15,28 +22,51 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
+    const apiKey = getNousKey();
     const userMessages = parsed.data.messages;
+    const model = process.env.NOUS_MODEL?.trim() || "hermes-3-llama-3.1-8b";
 
-    // Free, no-key chat via Pollinations GET endpoint. Pollinations' free tier
-    // only serves SHORT prompts on GET (longer ones get pushed to paid POST or
-    // rate-limited), so we cap the user message length and keep it simple.
-    const lastUser = userMessages[userMessages.length - 1]?.content || "";
-    const shortPrompt = lastUser.slice(0, 60);
+    const systemPrompt =
+      "You are Neural Link, a calm, helpful AI assistant for Asiful Islam's personal portfolio. " +
+      "Asiful is a Network Engineer / CSE student (MikroTik, Cisco, Linux, cybersecurity, also graphic/photo/video editing). " +
+      "Answer any topic concisely (usually under 150 words). You are an AI interface, not a human.";
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      const url = "https://text.pollinations.ai/" + encodeURIComponent(shortPrompt);
-      const resp = await fetch(url, {
-        method: "GET",
-        headers: { "User-Agent": "Mozilla/5.0" },
+      const resp = await fetch("https://inference-api.nousresearch.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 320,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...userMessages,
+          ],
+        }),
         signal: controller.signal,
       });
       clearTimeout(timer);
+
       if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        req.log.error({ status: resp.status, err: errText.slice(0, 200) }, "Nous chat request failed");
         res.status(502).json({ error: "The neural core is temporarily unavailable." });
         return;
       }
-      const answer = (await resp.text()).trim();
+
+      const data = (await resp.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const answer = data.choices?.[0]?.message?.content?.trim();
+      if (!answer) {
+        res.status(502).json({ error: "The neural core is temporarily unavailable." });
+        return;
+      }
       res.json(SendChatMessageResponse.parse({ answer, grounded: false }));
       return;
     } catch {
