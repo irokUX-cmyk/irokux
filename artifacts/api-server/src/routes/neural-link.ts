@@ -17,19 +17,15 @@ router.post("/chat", async (req, res) => {
   try {
     const userMessages = parsed.data.messages;
 
-    // Free, no-key chat via Pollinations (no daily quota, no credits).
+    // Free, no-key chat via Pollinations GET endpoint. IMPORTANT: Pollinations
+    // free tier only allows SHORT prompts on the GET endpoint — long prompts
+    // get pushed to the paid POST API (402). So we send just the user's last
+    // message with a tiny prefix, nothing more.
     const lastUser = userMessages[userMessages.length - 1]?.content || "";
-    const systemNote = "You are Neural Link, a calm, helpful AI assistant. " +
-      "Answer any topic concisely (under 150 words). " +
-      "You are the assistant for Asiful Islam's portfolio (Network Engineer, CSE student, " +
-      "MikroTik/Cisco/Linux/cybersecurity, also graphic/photo/video editing).";
-    const fullPrompt = `${systemNote}\n\nUser: ${lastUser}\n\nNeural Link:`;
-
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      // Free, no-key chat via Pollinations GET endpoint (no daily quota, no credits).
-      const url = "https://text.pollinations.ai/" + encodeURIComponent(fullPrompt);
+      const url = "https://text.pollinations.ai/" + encodeURIComponent("As Neural Link AI: " + lastUser);
       const resp = await fetch(url, {
         method: "GET",
         headers: { "User-Agent": "Neural-Link/1.0" },
