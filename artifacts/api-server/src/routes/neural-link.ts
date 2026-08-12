@@ -65,47 +65,45 @@ function pickEmotion(text: string): string | null {
   return null;
 }
 
-// Voice: server-side TTS via OpenRouter's audio endpoint (Fish Audio).
-// OpenRouter exposes an OpenAI-compatible /api/v1/audio/speech endpoint that
-// returns raw audio bytes. We default to the free Fish Audio model so no extra
-// cost is incurred, and stream the result back to the browser.
+// Voice: server-side TTS via Google Translate's free TTS endpoint.
+// No API key, no payment, no credit — works reliably. Supports many
+// languages via the `tl` param and a couple of voices via `tt` (0=default, 1=male/alt).
+// Emotion bracket tags are stripped since Google TTS doesn't use them.
 router.post("/tts", async (req, res) => {
-  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  if (!text) {
+  const rawText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!rawText) {
     res.status(400).json({ error: "Please provide text to speak." });
     return;
   }
-  if (text.length > 4000) {
+  if (rawText.length > 4000) {
     res.status(400).json({ error: "Text is too long to speak." });
     return;
   }
 
   try {
-    // Free, no-key TTS via HuggingFace Inference API (no payment, no credit).
-    // Fish Audio emotion bracket tags are harmless to keep (ignored by HF).
-    const tone = pickEmotion(text);
-    const spoken = tone ? `[${tone}] ${text}` : text;
+    // Strip Fish Audio emotion bracket tags (e.g. "[happy]") — not used here.
+    const text = rawText.replace(/\[[a-z]+\]\s*/gi, "").slice(0, 4000);
+    const lang = (process.env.TTS_LANG || "en").trim();
+    const voice = (process.env.TTS_VOICE || "0").trim(); // 0 = default, 1 = alt/male
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob&tt=${voice}`;
 
-    const hfModel = process.env.HF_TTS_MODEL || "espnet/kan-bayashi_ljspeech_vits";
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      const upstream = await fetch(`https://api-inference.huggingface.co/models/${hfModel}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: spoken }),
+      const upstream = await fetch(url, {
+        method: "GET",
+        headers: { "User-Agent": "Mozilla/5.0" },
         signal: controller.signal,
       });
       clearTimeout(timer);
 
       if (!upstream.ok || !upstream.body) {
-        req.log.error({ status: upstream.status }, "HuggingFace TTS request failed");
+        req.log.error({ status: upstream.status }, "Google TTS request failed");
         res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
         return;
       }
 
-      const contentType = upstream.headers.get("content-type") || "audio/wav";
-      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "no-store");
       const reader = upstream.body.getReader();
       const pump = async (): Promise<void> => {
@@ -120,7 +118,7 @@ router.post("/tts", async (req, res) => {
       await pump();
     } catch (upErr) {
       clearTimeout(timer);
-      req.log.error({ err: upErr }, "HuggingFace TTS upstream failed");
+      req.log.error({ err: upErr }, "Google TTS upstream failed");
       if (!res.headersSent) {
         res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
       }
