@@ -125,7 +125,7 @@ async function fetchWithTimeout(
 }
 
 async function ttsKokoro(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
-  const base = (process.env.TTS_SERVICE_URL || "").trim();
+  const base = (process.env.TTS_SERVICE_URL || "https://irokux-tts.onrender.com").trim();
   if (!base) return { ok: false };
   const voice = (process.env.TTS_VOICE || "bm_george").trim(); // bm_george = deep male British
   try {
