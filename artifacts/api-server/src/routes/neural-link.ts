@@ -29,10 +29,11 @@ router.post("/chat", async (req, res) => {
 
   try {
     const apiKey = getApiKey();
+    const userMessages = parsed.data.messages;
 
-    // Failover list: try OPENROUTER_MODEL first (if set), then a rotating set of
-    // allow-listed FREE models. Free models hit per-worker rate limits, so we fall
-    // over to the next one instead of hard-failing the whole request.
+    // Failover: fire all models in parallel and return the FIRST valid answer.
+    // Sequential fallback was too slow (20s+ when a model is exhausted), so
+    // we race them with a per-request timeout and take the quickest winner.
     const fallbackModels = [
       "nvidia/nemotron-3-nano-30b-a3b:free",
       "nvidia/nemotron-3-super-120b-a12b:free",
@@ -43,44 +44,44 @@ router.post("/chat", async (req, res) => {
     const primary = process.env.OPENROUTER_MODEL?.trim();
     const candidates = primary ? [primary, ...fallbackModels] : fallbackModels;
 
-    let answer: string | undefined;
-    for (const model of candidates) {
+    const requestTimeoutMs = 15_000;
+    async function callModel(model: string): Promise<string | null> {
       try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
-            "X-Title": "Neural Link Portfolio",
-          },
-          body: JSON.stringify({
-            model,
-            max_tokens: 320,
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              ...parsed.data.messages,
-            ],
+        const resp = await Promise.race([
+          fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
+              "X-Title": "Neural Link Portfolio",
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: 320,
+              messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                ...userMessages,
+              ],
+            }),
           }),
-        });
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), requestTimeoutMs)
+          ),
+        ]);
 
-        if (!response.ok) {
-          req.log.warn({ status: response.status, model }, "OpenRouter model failed; trying next");
-          continue;
-        }
-        const data = (await response.json()) as {
+        if (!resp.ok) return null;
+        const data = (await resp.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
         };
-        const text = data.choices?.[0]?.message?.content?.trim();
-        if (text) {
-          answer = text;
-          break;
-        }
-      } catch (err) {
-        req.log.warn({ model, err: String(err) }, "OpenRouter model threw; trying next");
-        continue;
+        return data.choices?.[0]?.message?.content?.trim() || null;
+      } catch {
+        return null;
       }
     }
+
+    const results = await Promise.all(candidates.map(callModel));
+    const answer = results.find((r): r is string => r !== null);
 
     if (!answer) {
       res.status(502).json({ error: "The neural core is temporarily unavailable." });
