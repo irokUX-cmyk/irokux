@@ -1,44 +1,36 @@
 :root {
   --bg: #03060f;
-  --cyan: #0bd3ff;
-  --violet: #9a5bff;
-  --gold: #ffc24d;
-  --ink: #cfe9ff;
+  --cyan: #7fd4ec;
+  --gold: #e8a23c;
+  --ink: #aec4d8;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body {
-  background: radial-gradient(1200px 800px at 50% 38%, #07142b 0%, #03060f 60%, #01030a 100%);
+  background: radial-gradient(1200px 800px at 50% 40%, #060e1c 0%, #03060f 60%, #01030a 100%);
   color: var(--ink);
   overflow: hidden;
 }
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 
-/* ---- The core is the hero: full-screen, raised slightly so it clears the chat sheet ---- */
 .neural-core { position: absolute; inset: 0; z-index: 0; transform: translateY(-7%); }
 .neural-core canvas { display: block; width: 100% !important; height: 100% !important; }
 
-.scanline {
-  position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(11,211,255,0.035) 0 1px, transparent 1px 3px);
-  mix-blend-mode: screen; opacity: 0.5;
-}
+.scanline { display: none; }
 
-/* ---- top bar ---- */
 .topbar {
   position: relative; z-index: 3; display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 22px; font-weight: 600; letter-spacing: 3px; pointer-events: none;
+  padding: 16px 22px; font-weight: 500; letter-spacing: 3px; pointer-events: none;
 }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--cyan); text-shadow: 0 0 14px rgba(11,211,255,0.7); }
-.status { font-size: 11px; letter-spacing: 2px; display: flex; align-items: center; gap: 7px; opacity: 0.9; color: var(--cyan); }
-.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
-.status-generating .dot { background: var(--gold); box-shadow: 0 0 12px var(--gold); animation: pulse 0.7s infinite; }
-.status-listening .dot { background: #22e0a0; box-shadow: 0 0 12px #22e0a0; }
-.status-speaking .dot { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--cyan); }
+.status { font-size: 10px; letter-spacing: 2px; display: flex; align-items: center; gap: 7px; opacity: 0.7; color: var(--cyan); }
+.status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); opacity: 0.8; }
+.status-generating .dot, .status-speaking .dot { background: var(--gold); }
+.status-listening .dot { background: #22e0a0; }
 @keyframes pulse { 50% { opacity: 0.3; } }
+.status-generating .dot { animation: pulse 0.8s infinite; }
 
-/* ---- chat as a translucent bottom sheet; the orb glows through it ---- */
 .stage {
   position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column;
   justify-content: flex-end; min-height: 0; pointer-events: none;
@@ -46,53 +38,52 @@ body {
 .chat {
   pointer-events: auto;
   width: min(740px, 100%); margin: 0 auto; align-self: flex-end;
-  max-height: 46%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-  padding: 14px 16px 6px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30px);
-  mask-image: linear-gradient(to bottom, transparent, #000 30px);
-  scrollbar-width: thin; scrollbar-color: rgba(11,211,255,0.4) transparent;
+  max-height: 44%; overflow-y: auto; display: flex; flex-direction: column; gap: 9px;
+  padding: 14px 16px 4px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px);
+  mask-image: linear-gradient(to bottom, transparent, #000 28px);
+  scrollbar-width: thin; scrollbar-color: rgba(127,212,236,0.3) transparent;
 }
 .msg { display: flex; animation: rise 0.3s ease; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .msg.user { justify-content: flex-end; }
 .bubble {
-  max-width: 80%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; font-size: 14.5px;
-  background: rgba(8, 20, 40, 0.42); border: 1px solid rgba(11,211,255,0.22);
-  backdrop-filter: blur(8px); box-shadow: 0 0 18px rgba(11,211,255,0.06);
+  max-width: 80%; padding: 9px 13px; border-radius: 14px; line-height: 1.5; font-size: 14px;
+  background: rgba(10, 18, 32, 0.5); border: 1px solid rgba(127,212,236,0.14);
+  backdrop-filter: blur(10px);
 }
-.msg.user .bubble { background: rgba(11,211,255,0.14); border-color: rgba(11,211,255,0.45); }
-.msg.assistant .bubble { border-color: rgba(255,194,77,0.22); }
-.speak { margin-left: 8px; background: none; border: none; color: var(--cyan); cursor: pointer; vertical-align: middle; opacity: 0.8; }
-.speak:hover { opacity: 1; }
-.typing { font-style: italic; opacity: 0.7; }
-.err { color: #ff8a8a; font-size: 13px; text-align: center; }
+.msg.user .bubble { background: rgba(127,212,236,0.08); border-color: rgba(127,212,236,0.28); }
+.msg.assistant .bubble { border-color: rgba(232,162,60,0.16); }
+.speak { margin-left: 7px; background: none; border: none; color: var(--cyan); cursor: pointer; vertical-align: middle; opacity: 0.6; }
+.speak:hover { opacity: 0.9; }
+.typing { font-style: italic; opacity: 0.55; }
+.err { color: #d98a8a; font-size: 12px; text-align: center; }
 
-/* ---- composer ---- */
 .composer {
-  position: relative; z-index: 3; display: flex; gap: 10px; padding: 12px 18px 22px;
+  position: relative; z-index: 3; display: flex; gap: 9px; padding: 10px 18px 20px;
   align-items: center; justify-content: center;
-  background: linear-gradient(to top, rgba(3,6,15,0.85), transparent);
+  background: linear-gradient(to top, rgba(3,6,15,0.9), transparent);
 }
 .composer input {
-  width: min(620px, 100%); padding: 13px 18px; border-radius: 26px; font-size: 15px; color: var(--ink);
-  background: rgba(8,22,42,0.6); border: 1px solid rgba(11,211,255,0.3); outline: none;
-  backdrop-filter: blur(8px);
+  width: min(620px, 100%); padding: 12px 16px; border-radius: 24px; font-size: 14px; color: var(--ink);
+  background: rgba(10, 18, 32, 0.55); border: 1px solid rgba(127,212,236,0.18); outline: none;
+  backdrop-filter: blur(10px);
 }
-.composer input::placeholder { color: rgba(207,233,255,0.5); }
-.composer input:focus { border-color: var(--cyan); box-shadow: 0 0 18px rgba(11,211,255,0.25); }
+.composer input::placeholder { color: rgba(174,196,216,0.45); }
+.composer input:focus { border-color: rgba(127,212,236,0.4); }
 .mic, .send {
-  width: 46px; height: 46px; flex: 0 0 auto; border-radius: 50%; border: 1px solid rgba(11,211,255,0.35);
-  background: rgba(11,211,255,0.12); color: var(--cyan); cursor: pointer; display: grid; place-items: center;
+  width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; border: 1px solid rgba(127,212,236,0.22);
+  background: rgba(127,212,236,0.07); color: var(--cyan); cursor: pointer; display: grid; place-items: center;
   transition: 0.2s;
 }
-.mic:hover, .send:hover { background: rgba(11,211,255,0.25); box-shadow: 0 0 16px rgba(11,211,255,0.4); }
+.mic:hover, .send:hover { background: rgba(127,212,236,0.16); }
 .mic.on { background: #22e0a0; color: #021; border-color: #22e0a0; }
-.send:disabled, .mic:disabled { opacity: 0.4; cursor: default; }
+.send:disabled, .mic:disabled { opacity: 0.35; cursor: default; }
 
 @media (max-width: 600px) {
-  .bubble { max-width: 86%; font-size: 14px; }
+  .bubble { max-width: 86%; font-size: 13.5px; }
   .topbar { letter-spacing: 2px; padding: 12px 16px; }
   .neural-core { transform: translateY(-9%); }
-  .chat { max-height: 50%; padding: 10px 12px 4px; }
-  .composer { padding: 8px 14px 18px; }
+  .chat { max-height: 48%; padding: 10px 12px 4px; }
+  .composer { padding: 8px 14px 16px; }
 }
