@@ -1,9 +1,10 @@
 # Self-hosted Kokoro TTS service (free, open-source, male "Jarvis-like" voice).
 # Uses the int8 quantized model (~88MB) so it fits Render's 512MB free tier.
+# NOTE: no espeak-ng apt package — it hangs on Render's build network.
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsndfile1 curl ca-certificates espeak-ng && \
+    libsndfile1 curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
