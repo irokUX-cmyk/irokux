@@ -1,34 +1,35 @@
 """
 Self-hosted TTS service using Kokoro ONNX (free, open-source).
-Default voice: bm_george (deep male, Jarvis-like).
+Serves a deep male "Jarvis-like" voice (bm_george) by default.
 Endpoint: POST /tts  { "text": "...", "voice": "bm_george" }
 Returns: audio/wav (24kHz mono).
 """
 import io
 import os
-import urllib.request
 from typing import Optional
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
+from kokoro_onnx import Kokoro
 
-APP = FastAPI(title="Neural Link TTS", version="1.0.0")
+MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.onnx")
+VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices-v1.0.bin")
+DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")  # deep male British
 
-MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v0_19.int8.onnx")
-VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices.bin")
-DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")
-_Kokoro = None
+app = FastAPI(title="Neural Link TTS", version="1.0.0")
+
+# Lazy-load the model (large file) on first request.
+_KOKORO = None
 
 
-def get_kokoro():
-    global _Kokoro
-    if _Kokoro is None:
-        from kokoro_onnx import Kokoro
+def get_kokoro() -> Kokoro:
+    global _KOKORO
+    if _KOKORO is None:
         if not os.path.exists(MODEL_PATH) or not os.path.exists(VOICES_PATH):
-            raise RuntimeError("Kokoro model/voices files not found")
-        _Kokoro = Kokoro(MODEL_PATH, VOICES_PATH)
-    return _Kokoro
+            raise RuntimeError("Kokoro model files not found")
+        _KOKORO = Kokoro(model_path=MODEL_PATH, voices_path=VOICES_PATH)
+    return _KOKORO
 
 
 @app.get("/healthz")
@@ -48,16 +49,17 @@ def tts(payload: dict):
 
     try:
         kokoro = get_kokoro()
-        audio, sr = kokoro.create(text, voice)
-        buf = io.BytesIO()
-        sf.write(buf, audio, sr, format="WAV")
-        return Response(content=buf.getvalue(), media_type="audio/wav")
+        audio, sr = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {exc}")
+
+    buf = io.BytesIO()
+    sf.write(buf, audio, sr, format="WAV")
+    return Response(content=buf.getvalue(), media_type="audio/wav")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(APP, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
