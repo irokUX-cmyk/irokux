@@ -31,9 +31,7 @@ router.post("/chat", async (req, res) => {
     const apiKey = getApiKey();
     const userMessages = parsed.data.messages;
 
-    // Failover: fire all models in parallel and return the FIRST valid answer.
-    // Sequential fallback was too slow (20s+ when a model is exhausted), so
-    // we race them with a per-request timeout and take the quickest winner.
+    // Race all models in parallel and return the FIRST valid answer.
     const fallbackModels = [
       "nvidia/nemotron-3-nano-30b-a3b:free",
       "nvidia/nemotron-3-super-120b-a12b:free",
@@ -80,8 +78,7 @@ router.post("/chat", async (req, res) => {
       }
     }
 
-    const results = await Promise.all(candidates.map(callModel));
-    const answer = results.find((r): r is string => r !== null);
+    const answer = await Promise.any(candidates.map(callModel));
 
     if (!answer) {
       res.status(502).json({ error: "The neural core is temporarily unavailable." });
