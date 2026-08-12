@@ -1,6 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-piper-tts==1.2.0
+piper-tts
 soundfile==0.14.0
 numpy==2.2.1
 onnxruntime==1.20.1
