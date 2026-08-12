@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from kokoro_onnx import Kokoro
 
-MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.fp16.onnx")
+MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.int8.onnx")
 VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices-v1.0.bin")
 DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")  # deep male British
 
@@ -53,9 +53,17 @@ def tts(payload: dict):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {exc}")
 
-    buf = io.BytesIO()
-    sf.write(buf, audio, sr, format="WAV")
-    return Response(content=buf.getvalue(), media_type="audio/wav")
+    # Write WAV via a temp file (robust across model dtypes) and read bytes back.
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        sf.write(tmp_path, audio, sr, subtype="PCM_16")
+        with open(tmp_path, "rb") as f:
+            wav_bytes = f.read()
+    finally:
+        os.remove(tmp_path)
+    return Response(content=wav_bytes, media_type="audio/wav")
 
 
 if __name__ == "__main__":
