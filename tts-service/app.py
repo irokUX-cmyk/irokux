@@ -5,17 +5,15 @@ Endpoint: POST /tts  { "text": "...", "voice": "en-US-GuyNeural" }
 Returns: audio/mpeg (MP3). Falls back to Google Translate TTS if Edge fails.
 No model files, no GPU — just a fast cloud call, so cold starts are quick.
 """
-import io
 import os
 import urllib.parse
 import urllib.request
-from typing import Optional
 
 import edge_tts
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 
-APP = FastAPI(title="Neural Link TTS", version="2.0.0")
+app = FastAPI(title="Neural Link TTS", version="2.0.0")
 
 DEFAULT_VOICE = os.environ.get("TTS_VOICE", "en-US-GuyNeural")  # deep male
 
@@ -73,4 +71,4 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(APP, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
