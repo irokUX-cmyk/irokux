@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from kokoro_onnx import Kokoro
 
-MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.onnx")
+MODEL_PATH = os.environ.get("KOKORO_MODEL", "kokoro-v1.0.fp16.onnx")
 VOICES_PATH = os.environ.get("KOKORO_VOICES", "voices-v1.0.bin")
 DEFAULT_VOICE = os.environ.get("TTS_VOICE", "bm_george")  # deep male British
 
