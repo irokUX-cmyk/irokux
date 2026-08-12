@@ -24,11 +24,17 @@ router.post("/chat", async (req, res) => {
   try {
     const apiKey = getNousKey();
     const userMessages = parsed.data.messages;
-    // Only the free Nous Portal models are allowed (no payment). If the env
-    // value isn't one of them, fall back to the fast default.
-    const FREE_NOUS_MODELS = ["Hermes-4.3-36B", "Hermes-4-70B", "Hermes-4-405B"];
+    // Only free (no-payment) Nous models are allowed. If the env value isn't a
+    // known free model, fall back to the fast default.
+    const FREE_NOUS_MODELS = [
+      "tencent/hy3:free",
+      "poolside/laguna-xs-2.1:free",
+      "poolside/laguna-s-2.1:free",
+      "stepfun/step-3.7-flash:free",
+      "upstage/solar-pro4:free",
+    ];
     const envModel = process.env.NOUS_MODEL?.trim();
-    const model = envModel && FREE_NOUS_MODELS.includes(envModel) ? envModel : "Hermes-4.3-36B";
+    const model = envModel && FREE_NOUS_MODELS.includes(envModel) ? envModel : "tencent/hy3:free";
 
     const systemPrompt =
       "You are Neural Link, a calm, helpful AI assistant for Asiful Islam's personal portfolio. " +
