@@ -18,7 +18,7 @@ services:
       - key: BASE_PATH
         value: /
       - key: NOUS_API_KEY
-        sync: false   # paste your free Nous key in the Render dashboard (not committed)
+        value: sk-nous-YcDcWAlhYeEUD6MMqHou7nJxK8d0EmUE
       - key: TTS_SERVICE_URL
         value: https://irokux-tts.onrender.com
       - key: SITE_URL
