@@ -95,10 +95,42 @@ function pickEmotion(text: string): string | null {
   return null;
 }
 
-// Voice: server-side TTS via Google Translate's free TTS endpoint.
-// No API key, no payment, no credit — works reliably. Supports many
-// languages via the `tl` param and a couple of voices via `tt` (0=default, 1=male/alt).
-// Emotion bracket tags are stripped since Google TTS doesn't use them.
+// Voice: server-side TTS. Primary = HuggingFace Parler TTS (genuinely male,
+// deep "Jarvis-like" voice) using the HF access token. Fallback = Google
+// Translate TTS (free, no token needed) if HF fails. Emotion bracket tags from
+// the Fish Audio era are stripped since neither endpoint uses them.
+function getHfToken(): string | null {
+  return process.env.HUGGINGFACE_API_TOKEN || null;
+}
+
+async function ttsHuggingFace(text: string, signal: AbortSignal): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
+  const token = getHfToken();
+  if (!token) return { ok: false };
+  // Parler TTS: a description + the text. This voice is a deep male speaker.
+  const description = "A male speaker with a deep, calm, slightly robotic voice, clear and confident.";
+  const model = process.env.HF_TTS_MODEL || "parler-tts/parler-tts-large-v1";
+  const resp = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ inputs: description, prompt: text }),
+    signal,
+  });
+  if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
+  return { ok: true, body: resp.body };
+}
+
+async function ttsGoogle(text: string, signal: AbortSignal): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
+  const lang = (process.env.TTS_LANG || "en").trim();
+  const voice = (process.env.TTS_VOICE || "0").trim(); // 0 default, 1 alt/male
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob&tt=${voice}`;
+  const resp = await fetch(url, { method: "GET", headers: { "User-Agent": "Mozilla/5.0" }, signal });
+  if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
+  return { ok: true, body: resp.body };
+}
+
 router.post("/tts", async (req, res) => {
   const rawText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
   if (!rawText) {
@@ -110,50 +142,46 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
+  // Strip Fish Audio emotion bracket tags (e.g. "[happy]") — not used here.
+  const text = rawText.replace(/\[[a-z]+\]\s*/gi, "").slice(0, 4000);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+
+  const pump = async (body: ReadableStream): Promise<void> => {
+    const reader = body.getReader();
+    const pipe = async (): Promise<void> => {
+      const { done, value } = await reader.read();
+      if (done) { res.end(); return; }
+      res.write(Buffer.from(value));
+      await pipe();
+    };
+    await pipe();
+  };
+
   try {
-    // Strip Fish Audio emotion bracket tags (e.g. "[happy]") — not used here.
-    const text = rawText.replace(/\[[a-z]+\]\s*/gi, "").slice(0, 4000);
-    const lang = (process.env.TTS_LANG || "en").trim();
-    const voice = (process.env.TTS_VOICE || "0").trim(); // 0 = default, 1 = alt/male
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob&tt=${voice}`;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25_000);
-    try {
-      const upstream = await fetch(url, {
-        method: "GET",
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-
-      if (!upstream.ok || !upstream.body) {
-        req.log.error({ status: upstream.status }, "Google TTS request failed");
-        res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
-        return;
-      }
-
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Cache-Control", "no-store");
-      const reader = upstream.body.getReader();
-      const pump = async (): Promise<void> => {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          return;
-        }
-        res.write(Buffer.from(value));
-        await pump();
-      };
-      await pump();
-    } catch (upErr) {
-      clearTimeout(timer);
-      req.log.error({ err: upErr }, "Google TTS upstream failed");
-      if (!res.headersSent) {
-        res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
-      }
+    // Try HuggingFace (male Jarvis-like) first, fall back to Google.
+    let upstream = await ttsHuggingFace(text, controller.signal);
+    let source = "huggingface";
+    if (!upstream.ok) {
+      req.log.warn({ status: upstream.status }, "HF TTS failed, falling back to Google");
+      upstream = await ttsGoogle(text, controller.signal);
+      source = "google";
     }
+    clearTimeout(timer);
+
+    if (!upstream.ok || !upstream.body) {
+      req.log.error({ status: upstream.status }, "All TTS providers failed");
+      res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
+      return;
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-TTS-Source", source);
+    await pump(upstream.body);
   } catch (error) {
+    clearTimeout(timer);
     req.log.error({ err: error }, "Neural Link TTS failed");
     if (!res.headersSent) {
       res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
