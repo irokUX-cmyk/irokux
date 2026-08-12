@@ -28,10 +28,11 @@ router.post("/chat", async (req, res) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      const resp = await fetch("https://text.pollinations.ai/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": "Neural-Link/1.0" },
-        body: JSON.stringify({ messages: [{ role: "user", content: fullPrompt }], model: "openai" }),
+      // Free, no-key chat via Pollinations GET endpoint (no daily quota, no credits).
+      const url = "https://text.pollinations.ai/" + encodeURIComponent(fullPrompt);
+      const resp = await fetch(url, {
+        method: "GET",
+        headers: { "User-Agent": "Neural-Link/1.0" },
         signal: controller.signal,
       });
       clearTimeout(timer);
