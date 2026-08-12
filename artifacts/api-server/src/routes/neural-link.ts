@@ -20,24 +20,6 @@ function getApiKey(): string {
   return key;
 }
 
-// Local fallback used ONLY when OpenRouter is unavailable (e.g. account
-// guardrail / network). This is not a gate — OpenRouter is always tried first
-// for every message; this just prevents a hard 502 when the AI backend is down.
-function localProfileAnswer(question: string): string | null {
-  const q = question.toLowerCase();
-  if (!/\b(asiful|his|him|about (you|yourself)|your background|your experience|your skills|your work|your education|your certificate|your career|personal)\b/i.test(q)) {
-    return null;
-  }
-  if (/\bname\b/.test(q)) return "His name is Asiful Islam.";
-  if (/\b(certificates?|credentials?|ccna|adobe)\b/.test(q)) return "The supplied profile lists CCNA and Adobe Visual Design.";
-  if (/\b(education|study|degree|student|cse)\b/.test(q)) return "Asiful is a Computer Science and Engineering (CSE) student.";
-  if (/\b(creative|design|video|photo|visual)\b/.test(q)) return "His supplied creative work includes graphic design, photo editing, photography, video editing, and motion-oriented creative work.";
-  if (/\b(cyber|security|linux)\b/.test(q)) return "Cybersecurity, Linux, and security tooling are part of Asiful’s supplied technical interests.";
-  if (/\b(role|job|work|experience|career|professional)\b/.test(q)) return "The supplied profile describes network administration and ISP operations, including MikroTik-based customer-network work, alongside graphic design and video editing.";
-  if (/\b(skill|technical|network|mikrotik|cisco|routing|switching)\b/.test(q)) return "The supplied technical areas include network administration, ISP operations, MikroTik, Cisco networking, routing, switching, Linux, cybersecurity interest, and infrastructure troubleshooting.";
-  return "Asiful is a Network Administrator / Network Engineer and IT professional with creative work in graphic design, photo editing, photography, and video editing; he is a CSE student with CCNA and Adobe Visual Design certificates.";
-}
-
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -46,7 +28,6 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
-    const latestQuestion = parsed.data.messages[parsed.data.messages.length - 1]?.content ?? "";
     const openRouterModel = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
     const apiKey = getApiKey();
 
@@ -70,11 +51,6 @@ router.post("/chat", async (req, res) => {
 
     if (!response.ok) {
       req.log.error({ status: response.status }, "OpenRouter chat request failed");
-      const fb = localProfileAnswer(latestQuestion);
-      if (fb) {
-        res.json(SendChatMessageResponse.parse({ answer: fb, grounded: true }));
-        return;
-      }
       res.status(502).json({ error: "The neural core is temporarily unavailable." });
       return;
     }
@@ -94,12 +70,6 @@ router.post("/chat", async (req, res) => {
     }));
   } catch (error) {
     req.log.error({ err: error }, "Neural Link chat failed");
-    const latestQuestion = parsed.data.messages[parsed.data.messages.length - 1]?.content ?? "";
-    const fb = localProfileAnswer(latestQuestion);
-    if (fb) {
-      res.json(SendChatMessageResponse.parse({ answer: fb, grounded: true }));
-      return;
-    }
     res.status(502).json({ error: "The neural core is temporarily unavailable." });
   }
 });
@@ -123,6 +93,19 @@ router.post("/tts", async (req, res) => {
     const apiKey = getApiKey();
     const ttsModel =
       process.env.OPENROUTER_TTS_MODEL || "fish-audio/s2.1-pro-free:free";
+    // Fish Audio selects voices by `reference_id` (a voice UUID), not by a name.
+    // Set OPENROUTER_TTS_VOICE to a MALE Fish Audio voice UUID from
+    // https://fish.audio/voice-library/male/ (e.g. copy the voice id there).
+    const voiceRef = process.env.OPENROUTER_TTS_VOICE || "";
+
+    const body: Record<string, unknown> = {
+      model: ttsModel,
+      input: text,
+      response_format: "mp3",
+    };
+    if (/^[a-f0-9]{32}$/i.test(voiceRef)) {
+      body.reference_id = voiceRef;
+    }
 
     const upstream = await fetch("https://openrouter.ai/api/v1/audio/speech", {
       method: "POST",
@@ -132,12 +115,7 @@ router.post("/tts", async (req, res) => {
         "HTTP-Referer": process.env.SITE_URL || "http://localhost:5000",
         "X-Title": "Neural Link Portfolio",
       },
-      body: JSON.stringify({
-        model: ttsModel,
-        input: text,
-        voice: process.env.OPENROUTER_TTS_VOICE || "alloy",
-        response_format: "mp3",
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!upstream.ok || !upstream.body) {
