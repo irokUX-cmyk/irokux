@@ -1,27 +1,28 @@
-# Self-hosted Kokoro TTS service (free, open-source, male "Jarvis-like" voice).
+# Self-hosted Piper TTS service (free, open-source, tiny ~50MB, male "Jarvis-like" voice).
 FROM python:3.11-slim
 
-# System deps for soundfile/onnxruntime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsndfile1 curl ca-certificates && \
+    libsndfile1 curl ca-certificates espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python deps first (cached layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download Kokoro model + voices at build time so they are baked into the image
-# (avoids slow runtime downloads on Render's free tier).
-RUN curl -L -o kokoro-v1.0.onnx \
-      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx && \
-    curl -L -o voices-v1.0.bin \
-      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+# Download a deep male Piper voice (libritts_r-medium) at build time so it is
+# baked into the image. ~50MB — fits the free tier's 512MB RAM comfortably.
+RUN mkdir -p piper_voice && \
+    curl -L -o piper_voice/en_US-libritts_r-medium.onnx \
+      https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx && \
+    curl -L -o piper_voice/en_US-libritts_r-medium.onnx.json \
+      https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
 
 COPY app.py .
 
 ENV PORT=8000
+ENV PIPER_VOICE_DIR=/app/piper_voice
+ENV TTS_VOICE=en_US-libritts_r-medium
 EXPOSE 8000
 
 CMD ["python", "app.py"]
