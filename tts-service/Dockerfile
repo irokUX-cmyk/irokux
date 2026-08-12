@@ -1,6 +1,6 @@
 # Self-hosted Kokoro TTS service (free, open-source, male "Jarvis-like" voice).
-# Uses the fp16 v1.0 model (~177MB) — synth-safe, half the RAM of fp32.
-# OMP_NUM_THREADS=1 reduces onnxruntime memory to fit the 512MB free tier.
+# Uses the int8 v1.0 model (~88MB) — smallest, fits Render's 512MB free tier.
+# kokoro-onnx==0.5.0 (pinned) has the correct config.json (0.1.8 was broken).
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,8 +12,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN curl -L -o kokoro-v1.0.fp16.onnx \
-      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.fp16.onnx && \
+RUN curl -L -o kokoro-v1.0.int8.onnx \
+      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx && \
     curl -L -o voices-v1.0.bin \
       https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 
