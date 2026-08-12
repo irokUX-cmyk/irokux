@@ -1,8 +1,9 @@
 # Self-hosted Piper TTS service (free, open-source, tiny ~50MB, male "Jarvis-like" voice).
+# Uses espeakng-loader (pip) so no system espeak-ng apt package is needed.
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsndfile1 curl ca-certificates espeak-ng && \
+    libsndfile1 curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

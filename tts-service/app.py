@@ -29,7 +29,13 @@ def get_synthesizer(voice: str):
         model_path = os.path.join(VOICE_DIR, f"{voice}.onnx")
         config_path = os.path.join(VOICE_DIR, f"{voice}.onnx.json")
         if not os.path.exists(model_path) or not os.path.exists(config_path):
-            raise RuntimeError(f"Piper voice files not found for {voice}")
+            # Download the voice files on first use (cached afterwards).
+            base = (
+                "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+                f"en/en_US/libritts_r/medium/{voice}"
+            )
+            urllib.request.urlretrieve(f"{base}.onnx", model_path)
+            urllib.request.urlretrieve(f"{base}.onnx.json", config_path)
         _Synthesizer = PiperVoice.load(model_path, config_path=config_path)
     return _Synthesizer
 
