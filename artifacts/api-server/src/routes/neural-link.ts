@@ -43,6 +43,7 @@ router.post("/chat", async (req, res) => {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (NeuralLink/1.0)",
         },
         body: JSON.stringify({
           model,
@@ -99,41 +100,61 @@ function pickEmotion(text: string): string | null {
   return null;
 }
 
-// Voice: server-side TTS. Primary = HuggingFace Parler TTS (genuinely male,
-// deep "Jarvis-like" voice) using the HF access token. Fallback = Google
-// Translate TTS (free, no token needed) if HF fails. Emotion bracket tags from
-// the Fish Audio era are stripped since neither endpoint uses them.
+// Voice: server-side TTS. Google Translate (free, no token) is the reliable
+// primary; HuggingFace Parler (genuinely male "Jarvis-like" voice) is tried
+// first only if a token is present, then falls back to Google. Each call gets
+// its own AbortController so a slow provider can't abort the fallback.
 function getHfToken(): string | null {
   return process.env.HUGGINGFACE_API_TOKEN || null;
 }
 
-async function ttsHuggingFace(text: string, signal: AbortSignal): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
-  const token = getHfToken();
-  if (!token) return { ok: false };
-  // Parler TTS: a description + the text. This voice is a deep male speaker.
-  const description = "A male speaker with a deep, calm, slightly robotic voice, clear and confident.";
-  const model = process.env.HF_TTS_MODEL || "parler-tts/parler-tts-large-v1";
-  const resp = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    // HF Parler format: inputs = the spoken text, parameters.description = voice.
-    body: JSON.stringify({ inputs: text, parameters: { description } }),
-    signal,
-  });
-  if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
-  return { ok: true, body: resp.body };
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function ttsGoogle(text: string, signal: AbortSignal): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
+async function ttsHuggingFace(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
+  const token = getHfToken();
+  if (!token) return { ok: false };
+  const description = "A male speaker with a deep, calm, slightly robotic voice, clear and confident.";
+  const model = process.env.HF_TTS_MODEL || "parler-tts/parler-tts-large-v1";
+  try {
+    const resp = await fetchWithTimeout(
+      `https://api-inference.huggingface.co/models/${model}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: text, parameters: { description } }),
+      },
+      20_000,
+    );
+    if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
+    return { ok: true, body: resp.body };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function ttsGoogle(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
   const lang = (process.env.TTS_LANG || "en").trim();
   const voice = (process.env.TTS_VOICE || "0").trim(); // 0 default, 1 alt/male
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob&tt=${voice}`;
-  const resp = await fetch(url, { method: "GET", headers: { "User-Agent": "Mozilla/5.0" }, signal });
-  if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
-  return { ok: true, body: resp.body };
+  try {
+    const resp = await fetchWithTimeout(url, { method: "GET", headers: { "User-Agent": "Mozilla/5.0" } }, 20_000);
+    if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
+    return { ok: true, body: resp.body };
+  } catch {
+    return { ok: false };
+  }
 }
 
 router.post("/tts", async (req, res) => {
@@ -150,9 +171,6 @@ router.post("/tts", async (req, res) => {
   // Strip Fish Audio emotion bracket tags (e.g. "[happy]") — not used here.
   const text = rawText.replace(/\[[a-z]+\]\s*/gi, "").slice(0, 4000);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
-
   const pump = async (body: ReadableStream): Promise<void> => {
     const reader = body.getReader();
     const pipe = async (): Promise<void> => {
@@ -165,16 +183,14 @@ router.post("/tts", async (req, res) => {
   };
 
   try {
-    // Try HuggingFace (male Jarvis-like) first, fall back to Google.
-    let upstream = await ttsHuggingFace(text, controller.signal);
-    let source = "huggingface";
-    if (!upstream.ok) {
-      req.log.warn({ status: upstream.status }, "HF TTS failed, falling back to Google");
-      upstream = await ttsGoogle(text, controller.signal);
-      source = "google";
+    // Google is the reliable primary; try HF (male voice) only if a token exists.
+    let upstream = await ttsGoogle(text);
+    let source = "google";
+    if (!upstream.ok && getHfToken()) {
+      req.log.warn("Google TTS failed, trying HuggingFace");
+      upstream = await ttsHuggingFace(text);
+      source = "huggingface";
     }
-    clearTimeout(timer);
-
     if (!upstream.ok || !upstream.body) {
       req.log.error({ status: upstream.status }, "All TTS providers failed");
       res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
@@ -186,7 +202,6 @@ router.post("/tts", async (req, res) => {
     res.setHeader("X-TTS-Source", source);
     await pump(upstream.body);
   } catch (error) {
-    clearTimeout(timer);
     req.log.error({ err: error }, "Neural Link TTS failed");
     if (!res.headersSent) {
       res.status(502).json({ error: "Voice synthesis is temporarily unavailable." });
