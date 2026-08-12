@@ -189,13 +189,14 @@ router.post("/tts", async (req, res) => {
   };
 
   try {
-    // Google is the reliable primary; try HF (male voice) only if a token exists.
-    let upstream = await ttsGoogle(text);
-    let source = "google";
-    if (!upstream.ok && getHfToken()) {
-      req.log.warn("Google TTS failed, trying HuggingFace");
-      upstream = await ttsHuggingFace(text);
-      source = "huggingface";
+    // HuggingFace Parler (genuinely male "Jarvis-like" voice) is the preferred
+    // primary when a token is present; fall back to Google if HF fails.
+    let upstream = await ttsHuggingFace(text);
+    let source = "huggingface";
+    if (!upstream.ok) {
+      req.log.warn("HF TTS failed, falling back to Google");
+      upstream = await ttsGoogle(text);
+      source = "google";
     }
     if (!upstream.ok || !upstream.body) {
       req.log.error({ status: upstream.status }, "All TTS providers failed");
