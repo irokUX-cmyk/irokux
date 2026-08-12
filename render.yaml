@@ -18,7 +18,7 @@ services:
       - key: BASE_PATH
         value: /
       - key: NOUS_API_KEY
-        value: sk-nous-YcDcWAlhYeEUD6MMqHou7nJxK8d0EmUE
+        value: sk-nous-SVR5NvpDcg8rVfGQwQAmQCupgkmFlvaY
       - key: TTS_SERVICE_URL
         value: https://irokux-tts.onrender.com
       - key: SITE_URL
