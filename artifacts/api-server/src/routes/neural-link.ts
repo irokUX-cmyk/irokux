@@ -74,6 +74,21 @@ router.post("/chat", async (req, res) => {
   }
 });
 
+// Map message tone -> a Fish Audio bracket emotion tag so the voice sounds
+// emotional/realistic. Fish Audio has no "tags" parameter; emotion is written
+// inline as e.g. "[happy] Hello there". Returns null when no clear tone.
+function pickEmotion(text: string): string | null {
+  const t = text.toLowerCase();
+  if (/\b(sad|sorry|unfortunate|regret|miss|lonely|depressed|tragic|cry|tears?)\b/.test(t)) return "sad";
+  if (/\b(angry|furious|hate|annoyed|frustrat\w*|damn|wtf|stupid)\b/.test(t)) return "angry";
+  if (/\b(excited|awesome|amazing|great news|congrat\w*|yes!|wohoo|lets go|love it)\b/.test(t)) return "excited";
+  if (/\b(happy|glad|joy|wonderful|thank you|thanks|pleased|delight\w*)\b/.test(t)) return "happy";
+  if (/\b(wow|whoa|really\?|no way|shocked|surpris\w*|omg|incredible)\b/.test(t)) return "surprised";
+  if (/\b(calm|relax|peaceful|gentle|quiet|softly|take a breath)\b/.test(t)) return "calm";
+  if (/\b(nervous|scared|afraid|worried|anxious|scary|danger|warning)\b/.test(t)) return "nervous";
+  return null;
+}
+
 // Voice: server-side TTS via OpenRouter's audio endpoint (Fish Audio).
 // OpenRouter exposes an OpenAI-compatible /api/v1/audio/speech endpoint that
 // returns raw audio bytes. We default to the free Fish Audio model so no extra
@@ -94,13 +109,21 @@ router.post("/tts", async (req, res) => {
     const ttsModel =
       process.env.OPENROUTER_TTS_MODEL || "fish-audio/s2.1-pro-free:free";
     // Fish Audio selects voices by `reference_id` (a voice UUID), not by a name.
-    // Set OPENROUTER_TTS_VOICE to a MALE Fish Audio voice UUID from
-    // https://fish.audio/voice-library/male/ (e.g. copy the voice id there).
-    const voiceRef = process.env.OPENROUTER_TTS_VOICE || "";
+    // Default to a MALE voice (Jarvis): https://fish.audio/m/14129c3e320149449d6bada6862f7338/
+    // Override with any male Fish voice UUID via OPENROUTER_TTS_VOICE.
+    const voiceRef =
+      process.env.OPENROUTER_TTS_VOICE || "14129c3e320149449d6bada6862f7338";
+
+    // Fish Audio expresses emotion by embedding bracket tags in the text
+    // (e.g. [happy], [excited], [sad], [calm]) — there is no separate "tags"
+    // parameter. Pick a tone from the message so the voice sounds emotional
+    // and realistic instead of flat.
+    const tone = pickEmotion(text);
+    const spoken = tone ? `[${tone}] ${text}` : text;
 
     const body: Record<string, unknown> = {
       model: ttsModel,
-      input: text,
+      input: spoken,
       response_format: "mp3",
     };
     if (/^[a-f0-9]{32}$/i.test(voiceRef)) {
