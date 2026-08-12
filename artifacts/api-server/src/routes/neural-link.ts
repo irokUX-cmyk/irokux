@@ -106,14 +106,10 @@ function pickEmotion(text: string): string | null {
   return null;
 }
 
-// Voice: server-side TTS. Google Translate (free, no token) is the reliable
-// primary; HuggingFace Parler (genuinely male "Jarvis-like" voice) is tried
-// first only if a token is present, then falls back to Google. Each call gets
-// its own AbortController so a slow provider can't abort the fallback.
-function getHfToken(): string | null {
-  return process.env.HUGGINGFACE_API_TOKEN || null;
-}
-
+// Voice: server-side TTS. Primary = self-hosted Kokoro service (genuinely male,
+// deep "Jarvis-like" voice, free & open-source). Fallback = Google Translate
+// TTS (free, no token) if the Kokoro service is unavailable. Emotion bracket
+// tags from the Fish Audio era are stripped since neither endpoint uses them.
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -128,20 +124,19 @@ async function fetchWithTimeout(
   }
 }
 
-async function ttsHuggingFace(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
-  const token = getHfToken();
-  if (!token) return { ok: false };
-  const description = "A male speaker with a deep, calm, slightly robotic voice, clear and confident.";
-  const model = process.env.HF_TTS_MODEL || "parler-tts/parler-tts-large-v1";
+async function ttsKokoro(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
+  const base = (process.env.TTS_SERVICE_URL || "").trim();
+  if (!base) return { ok: false };
+  const voice = (process.env.TTS_VOICE || "bm_george").trim(); // bm_george = deep male British
   try {
     const resp = await fetchWithTimeout(
-      `https://api-inference.huggingface.co/models/${model}`,
+      `${base.replace(/\/$/, "")}/tts`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: text, parameters: { description } }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice }),
       },
-      20_000,
+      30_000,
     );
     if (!resp.ok || !resp.body) return { ok: false, status: resp.status };
     return { ok: true, body: resp.body };
@@ -152,7 +147,7 @@ async function ttsHuggingFace(text: string): Promise<{ ok: boolean; body?: Reada
 
 async function ttsGoogle(text: string): Promise<{ ok: boolean; body?: ReadableStream; status?: number }> {
   const lang = (process.env.TTS_LANG || "en").trim();
-  const voice = (process.env.TTS_VOICE || "0").trim(); // 0 default, 1 alt/male
+  const voice = (process.env.TTS_VOICE_GOOGLE || "0").trim(); // unused selector (Google has 1 voice)
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob&tt=${voice}`;
   try {
     const resp = await fetchWithTimeout(url, { method: "GET", headers: { "User-Agent": "Mozilla/5.0" } }, 20_000);
@@ -189,12 +184,12 @@ router.post("/tts", async (req, res) => {
   };
 
   try {
-    // HuggingFace Parler (genuinely male "Jarvis-like" voice) is the preferred
-    // primary when a token is present; fall back to Google if HF fails.
-    let upstream = await ttsHuggingFace(text);
-    let source = "huggingface";
+    // Self-hosted Kokoro (male "Jarvis-like" voice) is the preferred primary;
+    // fall back to Google if the Kokoro service is unreachable.
+    let upstream = await ttsKokoro(text);
+    let source = "kokoro";
     if (!upstream.ok) {
-      req.log.warn("HF TTS failed, falling back to Google");
+      req.log.warn("Kokoro TTS unavailable, falling back to Google");
       upstream = await ttsGoogle(text);
       source = "google";
     }
@@ -204,7 +199,7 @@ router.post("/tts", async (req, res) => {
       return;
     }
 
-    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Type", source === "kokoro" ? "audio/wav" : "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-TTS-Source", source);
     await pump(upstream.body);
